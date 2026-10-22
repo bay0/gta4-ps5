@@ -2763,6 +2763,12 @@ class Gta4NativeGraphicsSystem final : public system::IGraphicsSystem {
   NativeSurfaceImage* temporal_depth_source_ = nullptr;
   uint64_t temporal_composite_scope_ = 0, temporal_last_sequence_ = 0,
            temporal_last_time_ns_ = 0, temporal_last_epoch_ = 0;
+  // [ps5 port] The scenes counted one after another for FSR's history (the
+  // guest's own frame numbers, last seen, can skip: PrepareTemporalFrame).
+  uint64_t temporal_history_sequence_ = 0, temporal_last_guest_sequence_ = 0;
+  uint64_t TemporalHistorySequence() const {
+    return REX_PLATFORM_PS5 ? temporal_history_sequence_ : temporal_metadata_.sequence;
+  }
   std::array<float, 16> temporal_previous_projection_{}, temporal_previous_inverse_{};
   std::array<float, 2> temporal_half_pixel_{};
   bool temporal_assets_checked_ = false, temporal_assets_ready_ = false,

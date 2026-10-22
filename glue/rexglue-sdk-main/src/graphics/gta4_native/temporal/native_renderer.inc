@@ -137,7 +137,10 @@ bool Gta4NativeGraphicsSystem::PrepareTemporalFrame() {
   // A frame without temporal updates has no scene, and its commands still
   // carry default temporal fields unless an earlier pass set them: skip the
   // walk, which read the first cache line of every command.
-  if (!frame_has_temporal_updates_ && !temporal_fields_set_) return true;
+  if (!frame_has_temporal_updates_ && !temporal_fields_set_) {
+    rex::frame_stats::NoteFgDrop(rex::frame_stats::FgDrop::kNoScene);
+    return true;
+  }
   temporal_fields_set_ = false;
   // One pass, and no stores into commands still at their defaults (every
   // command of a frame without temporal output): dirtying each command's
@@ -156,14 +159,23 @@ bool Gta4NativeGraphicsSystem::PrepareTemporalFrame() {
     std::memcpy(&candidate, command.bytes.data(), sizeof(candidate));
     if (candidate.event == TemporalEvent::kBeginScene) scene = candidate;
   }
-  if (!scene) return true;
+  if (!scene) {
+    rex::frame_stats::NoteFgDrop(rex::frame_stats::FgDrop::kNoScene);
+    return true;
+  }
   std::lock_guard lock(temporal_provider_mutex_);
   const auto selected = temporal_query_selections_.find(scene->sequence);
   if (selected == temporal_query_selections_.end() ||
       selected->second.render != temporal::Extent{scene->width, scene->height} ||
-      selected->second.output != temporal::Extent{scene->output_width, scene->output_height}) return true;
+      selected->second.output != temporal::Extent{scene->output_width, scene->output_height}) {
+    rex::frame_stats::NoteFgDrop(rex::frame_stats::FgDrop::kSceneSize);
+    return true;
+  }
   const auto selection = selected->second;
-  if (!EnsureTemporalAssets()) return true;
+  if (!EnsureTemporalAssets()) {
+    rex::frame_stats::NoteFgDrop(rex::frame_stats::FgDrop::kAssets);
+    return true;
+  }
   if (temporal_provider_recreate_) {
     if (!CompleteSecondaryNativeFrameSlot()) return false;
     temporal_provider_recreate_ = false;
@@ -202,6 +214,14 @@ bool Gta4NativeGraphicsSystem::PrepareTemporalFrame() {
   }
   temporal_configuration_ = config;
   temporal_metadata_ = *scene;
+#if REX_PLATFORM_PS5
+  // [ps5 port] FSR's history (upscaling and frame generation) counts scenes,
+  // one after another: the guest's frame count can advance twice per scene.
+  if (temporal_last_guest_sequence_ && scene->sequence != temporal_last_guest_sequence_ + 1)
+    rex::frame_stats::g_fg_sequence_gaps.fetch_add(1, std::memory_order_relaxed);
+  temporal_last_guest_sequence_ = scene->sequence;
+  ++temporal_history_sequence_;
+#endif
   temporal_provider_ = selection.provider;
   const bool configured = temporal_provider_ == TemporalUpscalerProvider::kFsr3
       ? fsr_upscaler_.Configure(config) : dlss_upscaler_.Configure(config);
@@ -296,7 +316,7 @@ void Gta4NativeGraphicsSystem::ClassifyTemporalDraw(const NativeCommand& command
       if (projection->reversed) temporal_metadata_.flags |= kTemporalDepthReversed;
       else temporal_metadata_.flags &= ~kTemporalDepthReversed;
       temporal_camera_adopted_ = temporal_geometry_history_.Begin(temporal_metadata_.epoch,
-          temporal_metadata_.view, temporal_metadata_.sequence,
+          temporal_metadata_.view, TemporalHistorySequence(),
           !temporal_history_valid_ || bool(temporal_metadata_.flags & kTemporalCameraCut));
     }
   }
@@ -322,8 +342,12 @@ void Gta4NativeGraphicsSystem::ClassifyTemporalDraw(const NativeCommand& command
       (blending || (command.pipeline_state->pixel_shader_resource &&
        IsFusionSkyShader(command.pipeline_state->pixel_shader_resource->hash)));
   if (policy.motion_relevant && (target.color_write_mask || fixed.depth_write_enable) &&
-      ((!target.temporal_motion && !preserves) || (target.temporal_motion && !target.temporal_jitter)))
+      ((!target.temporal_motion && !preserves) || (target.temporal_motion && !target.temporal_jitter))) {
+    if (temporal_motion_complete_)
+      NOTE_FG_MOTION_LOST(!target.temporal_motion ? "no motion, not blended" : "motion without jitter",
+                          command.pipeline_state);
     temporal_motion_complete_ = false;
+  }
 }
 
 bool Gta4NativeGraphicsSystem::BindTemporalDraw(VkCommandBuffer cb, const NativeCommand& command,
@@ -385,8 +409,10 @@ bool Gta4NativeGraphicsSystem::BindTemporalDraw(VkCommandBuffer cb, const Native
     NativeSharedConstants constants{};
     std::memcpy(&constants, shared.mapping, sizeof(constants));
     temporal_half_pixel_ = {constants.half_pixel_offset_x, constants.half_pixel_offset_y};
-    if (constants.modern_effects.depth_range[0] != 0.0f || constants.modern_effects.depth_range[1] != 1.0f)
+    if (constants.modern_effects.depth_range[0] != 0.0f || constants.modern_effects.depth_range[1] != 1.0f) {
+      if (temporal_motion_complete_) NOTE_FG_MOTION_LOST("depth range", command.pipeline_state);
       temporal_motion_complete_ = false;
+    }
     temporal_depth_source_ = target.depth_surface;
     ++temporal_world_draws_;
   }
@@ -419,11 +445,17 @@ bool Gta4NativeGraphicsSystem::ResolveTemporalScene(VkCommandBuffer cb, const Na
   }
   const auto color_layout = color.layout;
   bool encoded = false;
-  const bool continuity = temporal_history_valid_ && temporal_last_epoch_ == temporal_metadata_.epoch &&
-      temporal_last_sequence_ != UINT64_MAX && temporal_metadata_.sequence == temporal_last_sequence_ + 1 &&
-      temporal_metadata_.time_ns > temporal_last_time_ns_;
   const float delta_ms = temporal_metadata_.time_ns > temporal_last_time_ns_ && temporal_last_time_ns_
       ? float(double(temporal_metadata_.time_ns - temporal_last_time_ns_) / 1000000.0) : 0.0f;
+  const bool continuity = temporal_history_valid_ && temporal_last_epoch_ == temporal_metadata_.epoch &&
+      temporal_last_sequence_ != UINT64_MAX && TemporalHistorySequence() == temporal_last_sequence_ + 1 &&
+      temporal_metadata_.time_ns > temporal_last_time_ns_
+#if REX_PLATFORM_PS5
+      // (scenes counted one after another: a long gap between them, menus or
+      // loading, breaks the history as a skipped number did)
+      && delta_ms <= 250.0f
+#endif
+      ;
   if (temporal_motion_complete_ && temporal_world_draws_ && temporal_depth_source_ &&
       temporal_camera_adopted_ && delta_ms > 0.0f) {
     temporal::VulkanScene::Camera camera{};
@@ -445,12 +477,18 @@ bool Gta4NativeGraphicsSystem::ResolveTemporalScene(VkCommandBuffer cb, const Na
       frame.reactive = temporal_scene_.reactive(); frame.output = temporal_scene_.output();
       frame.render_extent = temporal_configuration_.render_extent;
       frame.output_extent = temporal_configuration_.output_extent;
-      frame.sequence = temporal_metadata_.sequence; frame.epoch = temporal_metadata_.epoch;
+      frame.sequence = TemporalHistorySequence(); frame.epoch = temporal_metadata_.epoch;
       frame.time_ns = temporal_metadata_.time_ns; frame.frame_time_ms = delta_ms;
       frame.jitter_x = temporal_metadata_.jitter[0]; frame.jitter_y = temporal_metadata_.jitter[1];
       frame.camera_near = temporal_metadata_.near_plane; frame.camera_far = temporal_metadata_.far_plane;
       frame.vertical_fov_radians = temporal_metadata_.field_of_view * (std::numbers::pi_v<float> / 180.0f);
       frame.reset = !continuity || (temporal_metadata_.flags & kTemporalCameraCut);
+#if REX_PLATFORM_PS5
+      // [ps5 port] A hitch between the two frames (2.5 of the slowest
+      // cadence's 33 ms): interpolating across it would smear.
+      if (rex::frame_stats::g_frame_generation_active.load(std::memory_order_relaxed) && delta_ms > 85.0f)
+        frame.reset = true;
+#endif
       frame.motion_complete = frame.scene_without_ui = true;
       {
         std::lock_guard lock(temporal_provider_mutex_);
@@ -468,6 +506,13 @@ bool Gta4NativeGraphicsSystem::ResolveTemporalScene(VkCommandBuffer cb, const Na
     }
   }
   native_draw_state_cache_.Reset();
+  if (!encoded)
+    rex::frame_stats::NoteFgDrop(!temporal_motion_complete_ ? rex::frame_stats::FgDrop::kSpatialMotion
+        : !temporal_world_draws_ ? rex::frame_stats::FgDrop::kSpatialWorld
+        : !temporal_depth_source_ ? rex::frame_stats::FgDrop::kSpatialDepth
+        : !temporal_camera_adopted_ ? rex::frame_stats::FgDrop::kSpatialCamera
+        : delta_ms <= 0.0f ? rex::frame_stats::FgDrop::kSpatialTime
+                           : rex::frame_stats::FgDrop::kSpatialEncode);
   if (!encoded && !temporal_scene_.SpatialFallback(cb, color)) return false;
   temporal_resolved_ = encoded;
   // A spatial frame is a valid composite input but cannot seed vendor history.
@@ -597,7 +642,7 @@ bool Gta4NativeGraphicsSystem::CompleteTemporalCoverage(VkCommandBuffer cb, bool
     std::lock_guard lock(temporal_provider_mutex_);
     if (temporal_encoded_) {
       if (temporal_provider_ == TemporalUpscalerProvider::kFsr3) fsr_upscaler_.OnSubmitted();
-      else dlss_upscaler_.OnSubmitted(temporal_metadata_.sequence);
+      else dlss_upscaler_.OnSubmitted(TemporalHistorySequence());
       temporal_encoded_ = false;
     }
   }
@@ -640,35 +685,57 @@ bool Gta4NativeGraphicsSystem::EncodeTemporalGeneration(VkCommandBuffer cb) {
     // lease and submission notification, but do not publish stale scene color.
     temporal_generated_frame_.has_generated_frame = false;
     temporal_frame_generator_.Reset();
+    rex::frame_stats::NoteFgDrop(rex::frame_stats::FgDrop::kSecondComposite);
     return true;
   }
   const auto selected = rex::cvar::GetFlagByName("gta4_native_frame_generation");
-  if ((selected != "fsr3" && selected != "dlss") || !temporal_encoded_ ||
-      !temporal_motion_complete_ || !temporal_camera_adopted_ ||
-      temporal_presenter_acquired_) return true;
+  if (selected != "fsr3" && selected != "dlss") return true;
+  if (!temporal_encoded_ || !temporal_motion_complete_ || !temporal_camera_adopted_ ||
+      temporal_presenter_acquired_) {
+    rex::frame_stats::NoteFgDrop(rex::frame_stats::FgDrop::kEncodeGate);
+    return true;
+  }
   auto* presenter = static_cast<ui::vulkan::VulkanPresenter*>(presenter_.get());
-  if (!presenter || !presenter->CanPresentGeneratedFrames()) return true;
+  if (!presenter || !presenter->CanPresentGeneratedFrames()) {
+    rex::frame_stats::NoteFgDrop(rex::frame_stats::FgDrop::kPresenter);
+    return true;
+  }
   auto* provider = static_cast<ui::vulkan::VulkanProvider*>(provider_.get());
   const auto* device = provider->vulkan_device();
-  bool complete_motion = false;
-  if (!CompleteTemporalCoverage(cb, complete_motion)) return false;
-  if (!complete_motion) {
-    temporal_frame_generator_.Reset();
-    return true;
+  // [ps5 port] Off on the PS5: the audit submits half the frame and waits for
+  // the GPU on the recorder, CPU and GPU in series, and the upscaler has just
+  // used the same motion and depth unaudited.
+  if (REXCVAR_GET(gta4_native_fg_motion_audit)) {
+    bool complete_motion = false;
+    if (!CompleteTemporalCoverage(cb, complete_motion)) return false;
+    if (!complete_motion) {
+      temporal_frame_generator_.Reset();
+      rex::frame_stats::NoteFgDrop(rex::frame_stats::FgDrop::kAudit);
+      return true;
+    }
   }
   if (!temporal_frame_generator_.Initialize(*device) ||
       !temporal_frame_generator_.Configure(selected == "dlss" ? temporal::FrameGenerationProvider::kDlss :
-          temporal::FrameGenerationProvider::kFsr, temporal_configuration_, false)) return true;
+          temporal::FrameGenerationProvider::kFsr, temporal_configuration_, false)) {
+    rex::frame_stats::NoteFgDrop(rex::frame_stats::FgDrop::kConfigure);
+    return true;
+  }
   temporal::FrameGenerationCamera camera{};
   const auto inverse_projection = temporal::InverseCameraMatrix(temporal_metadata_.projection);
   const auto previous_view = temporal::InverseCameraMatrix(temporal_previous_inverse_);
-  if (!inverse_projection || !previous_view) return true;
+  if (!inverse_projection || !previous_view) {
+    rex::frame_stats::NoteFgDrop(rex::frame_stats::FgDrop::kCamera);
+    return true;
+  }
   camera.view_to_clip = temporal_metadata_.projection; camera.clip_to_view = *inverse_projection;
   camera.clip_to_previous = temporal::MultiplyCameraMatrices(temporal::MultiplyCameraMatrices(
       temporal::MultiplyCameraMatrices(*inverse_projection, temporal_metadata_.view_inverse),
       *previous_view), temporal_previous_projection_);
   const auto inverse_reprojection = temporal::InverseCameraMatrix(camera.clip_to_previous);
-  if (!inverse_reprojection) return true;
+  if (!inverse_reprojection) {
+    rex::frame_stats::NoteFgDrop(rex::frame_stats::FgDrop::kCamera);
+    return true;
+  }
   camera.previous_to_clip = *inverse_reprojection;
   for (size_t i = 0; i < 3; ++i) {
     camera.right[i] = temporal_metadata_.view_inverse[i];
@@ -693,7 +760,16 @@ bool Gta4NativeGraphicsSystem::EncodeTemporalGeneration(VkCommandBuffer cb) {
   temporal::VulkanScene::Barrier(device, cb, frame.color, color_layout);
   temporal::VulkanScene::Barrier(device, cb, frame.output, output_layout);
   if (temporal_generated_frame_.lease()) temporal_frame_leases_[active_frame_slot_].push_back(temporal_generated_frame_.lease());
-  if (!encoded) temporal_generated_frame_.has_generated_frame = false;
+  if (!encoded) {
+    temporal_generated_frame_.has_generated_frame = false;
+    rex::frame_stats::NoteFgDrop(rex::frame_stats::FgDrop::kEncodeRefused);
+    static std::atomic<uint32_t> refusals_logged{0};
+    if (rex::frame_stats::g_frame_generation_active.load(std::memory_order_relaxed) &&
+        refusals_logged.fetch_add(1, std::memory_order_relaxed) < 8)
+      REXLOG_INFO("ps5 frame generation: refused ({})", temporal_frame_generator_.status());
+  } else if (!temporal_generated_frame_.has_generated_frame) {
+    rex::frame_stats::NoteFgDrop(rex::frame_stats::FgDrop::kHistoryReset);
+  }
   native_draw_state_cache_.Reset();
   return true;
 }
@@ -703,12 +779,12 @@ void Gta4NativeGraphicsSystem::SubmitTemporalFrame() {
   std::lock_guard lock(temporal_provider_mutex_);
   if (temporal_encoded_) {
     if (temporal_provider_ == TemporalUpscalerProvider::kFsr3) fsr_upscaler_.OnSubmitted();
-    else dlss_upscaler_.OnSubmitted(temporal_metadata_.sequence);
+    else dlss_upscaler_.OnSubmitted(TemporalHistorySequence());
   }
-  if (temporal_generated_frame_.lease()) temporal_frame_generator_.OnSubmitted(temporal_metadata_.sequence);
+  if (temporal_generated_frame_.lease()) temporal_frame_generator_.OnSubmitted(TemporalHistorySequence());
   temporal_history_valid_ = temporal_camera_adopted_ && temporal_motion_complete_;
   temporal_last_time_ns_ = temporal_metadata_.time_ns;
-  temporal_last_sequence_ = temporal_metadata_.sequence;
+  temporal_last_sequence_ = TemporalHistorySequence();
   temporal_last_epoch_ = temporal_metadata_.epoch;
   temporal_previous_projection_ = temporal_metadata_.projection;
   temporal_previous_inverse_ = temporal_metadata_.view_inverse;

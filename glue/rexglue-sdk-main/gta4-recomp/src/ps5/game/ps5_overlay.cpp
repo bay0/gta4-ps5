@@ -9,15 +9,20 @@
 #include <string>
 #include <vector>
 
+#include <fmt/format.h>
 #include <imgui.h>
 #include <rex/cvar.h>
 #include <rex/frame_stats.h>
 #include <rex/logging.h>
 
 #include "../hub/ps5_hub.h"
+#include "ps5_display.h"
 
-REXCVAR_DEFINE_BOOL(ps5_fps_counter, false, "PS5",
-                    "Show the frame rate counter at the left edge of the screen while playing");
+REXCVAR_DEFINE_STRING(ps5_fps_counter, "false", "PS5",
+                      "The frame rate counter at the left edge of the screen while playing: false (off), simple "
+                      "(frames a second and the frame time) or true (detailed: also the slowest frames, a graph, "
+                      "the resolution, the TV's refresh rate, the frame limit and frame generation)");
+REXCVAR_DECLARE(uint32_t, gta4_frame_limit);
 REXCVAR_DEFINE_BOOL(ps5_frametime_capture, false, "PS5",
                     "Record every frame's time to a CSV file in /app0/logs");
 REXCVAR_DEFINE_BOOL(ps5_overlay_every_vblank, false, "PS5",
@@ -113,7 +118,9 @@ void GameOverlay::OnDraw(ImGuiIO& io) {
   Capture();
   // (the overlay stays up with the counter off, drawing nothing: the game's
   // frames reach the TV the same way either way)
-  if (!REXCVAR_GET(ps5_fps_counter)) return;
+  const std::string mode = REXCVAR_GET(ps5_fps_counter);
+  if (mode.empty() || mode == "false" || mode == "off") return;
+  const bool simple = mode == "simple";
   Sample();
   const ImVec2 size = io.DisplaySize;
   const float s = std::min(size.x / 1920.0f, size.y / 1080.0f);
@@ -124,9 +131,30 @@ void GameOverlay::OnDraw(ImGuiIO& io) {
   auto P = [&](float x, float y) { return ImVec2(x * s, y * s); };
 
   // ---- the counter, on the left edge halfway down (the game's own HUD uses
-  // the corners): frames a second, frame time, the slow frames and a graph
-  const float w = 264, pad = 12;
-  const float graph_h = 48, h = pad + 36 + 20 + 10 + graph_h + pad;
+  // the corners). Simple: frames a second and the frame time. Detailed: also
+  // the slowest frames, what the picture is set to and a graph.
+  std::vector<std::string> info;
+  if (!simple) {
+    // what the picture is: the game's resolution, the TV, the frame limit
+    std::string res = rex::cvar::GetFlagByName("resolution");
+    if (res == "4k") res = "4K";
+    std::string tv = display::HighRefresh() ? (display::Vrr() ? "120 Hz VRR" : "120 Hz") : "60 Hz";
+    const bool fg = rex::frame_stats::g_frame_generation_active.load(std::memory_order_relaxed);
+    info.push_back(res + "  \xC2\xB7  " + tv +
+                   (fg ? std::string() : "  \xC2\xB7  limit " + std::to_string(REXCVAR_GET(gta4_frame_limit))));
+    if (fg) {
+      const uint32_t v = std::max<uint32_t>(1, rex::frame_stats::g_fg_vblanks_per_image.load(std::memory_order_relaxed));
+      const int out = (display::HighRefresh() ? 120 : 60) / int(v);
+      info.push_back("Frame generation " + std::to_string(out / 2) + " \xE2\x86\x92 " + std::to_string(out));
+    }
+    // the renderer's share of the last frame (the graphics thread's recording)
+    if (const uint32_t rec = rex::frame_stats::g_last_recorder_busy_us.load(std::memory_order_relaxed))
+      info.push_back("Renderer " + fmt::format("{:.1f}", rec / 1000.0) + " ms a frame");
+  }
+  const float w = simple ? 196 : 264, pad = 12, line_h = 19;
+  const float graph_h = simple ? 0 : 48;
+  const float h = simple ? pad + 36 + pad - 4
+                         : pad + 36 + 20 + float(info.size()) * line_h + 10 + graph_h + pad;
   const float x = 12, y = (size.y / s - h) * 0.5f;
   dl->AddRectFilled(P(x, y), P(x + w, y + h), IM_COL32(0, 0, 0, 170), 8 * s);
   char big[16], unit[] = "FPS", ms[32], small[96];
@@ -145,10 +173,14 @@ void GameOverlay::OnDraw(ImGuiIO& io) {
   dl->AddText(bold, 15 * s, ImVec2((x + pad) * s + bsz.x + 6 * s, (y + pad + 13) * s), IM_COL32(255, 255, 255, 170), unit);
   const ImVec2 msz = bold->CalcTextSizeA(20 * s, 1e9f, 0, ms);
   dl->AddText(bold, 20 * s, ImVec2((x + w - pad) * s - msz.x, (y + pad + 8) * s), IM_COL32(244, 245, 247, 255), ms);
+  if (simple) return;
   dl->AddText(body, 14 * s, P(x + pad, y + pad + 37), IM_COL32(255, 255, 255, 175), small);
+  for (size_t i = 0; i < info.size(); ++i)
+    dl->AddText(body, 14 * s, P(x + pad, y + pad + 37 + 20 + float(i) * line_h), IM_COL32(255, 255, 255, 175),
+                info[i].c_str());
 
   // the graph: one bar a frame, newest on the right, 0 to 66 ms (15 FPS) tall
-  const float gx = x + pad, gy = y + pad + 36 + 20 + 10, gw = w - pad * 2;
+  const float gx = x + pad, gy = y + pad + 36 + 20 + float(info.size()) * line_h + 10, gw = w - pad * 2;
   dl->AddRectFilled(P(gx, gy), P(gx + gw, gy + graph_h), IM_COL32(255, 255, 255, 18), 4 * s);
   constexpr float kTopMs = 66.7f;
   const uint64_t frames = rex::frame_stats::g_presents.load(std::memory_order_acquire);

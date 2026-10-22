@@ -3,6 +3,7 @@
 #include "gta4_frontend_hooks.h"
 
 #include <array>
+#include <atomic>
 #include <bit>
 #include <cstdint>
 #include <cstring>
@@ -1388,6 +1389,12 @@ void ReleaseDisplayExtension(PPCContext& ctx, uint8_t* base) {
 }
 
 void InstallDisplayExtension(PPCContext& ctx, uint8_t* base) {
+#if REX_PLATFORM_PS5
+  // [ps5 port] No Advanced Graphics in the pause menu: its rows are the PC
+  // port's (VSync, FSR 1, renderer, window), and the hub sets the PS5's.
+  (void)ctx, (void)base;
+  return;
+#endif
   if (!REXCVAR_GET(gta4_frontend_advanced_graphics_menu)) {
     return;
   }
@@ -1822,6 +1829,38 @@ constexpr uint32_t kNewEpisodeAddress = 0x82BF9864;
 constexpr uint32_t kStartEpisodeAddress = 0x82BF9858;
 int32_t g_answer_yes_for = -1;  // (the episode whose question is answered)
 bool g_start_episode_used = false;  // (the start only: later checks are the game's)
+// [ps5 port] Past the question, the start scans the saves (sub_822440F8's
+// states 1-2): sub_822409F0 resets the start episode to the profile's last
+// one, then sub_82240798 runs for each save and keeps the newest of ANY
+// episode, writing its slot to kBootSlotAddress and its episode (read from the
+// save's name) to kStartEpisodeAddress. So with a TLAD save newest, GTA IV
+// chosen on Home still loaded TLAD. With a Home choice the scan here only
+// takes saves of that episode, and with none the episode starts new.
+constexpr uint32_t kProfilePointerAddress = 0x821E4DD4;
+constexpr uint32_t kBootSlotAddress = 0x82A95478;       // (-1: none, a new game)
+constexpr uint32_t kNewestSaveTimeAddress = 0x82BF98A0; // (6 words)
+constexpr uint32_t kSaveTableAddress = 0x82BF3D98;      // (XCONTENT_DATA, 308 bytes each)
+constexpr uint32_t kSaveEntrySize = 308;
+constexpr uint32_t kSaveDisplayNameOffset = 8;          // (UTF-16BE, 128)
+constexpr uint32_t kSaveFileNameOffset = 264;           // ("SGTA4NN")
+int32_t g_boot_episode = -1;    // (the Home choice, while the start's steps run)
+bool g_in_start_steps = false;  // (inside sub_822440F8)
+}  // namespace
+
+namespace {
+std::string SaveFileName(uint8_t* base, uint32_t slot) {
+  return ReadGuestString(base, kSaveTableAddress + slot * kSaveEntrySize + kSaveFileNameOffset, 42);
+}
+std::string SaveDisplayName(uint8_t* base, uint32_t slot) {
+  std::string name;
+  const uint32_t at = kSaveTableAddress + slot * kSaveEntrySize + kSaveDisplayNameOffset;
+  for (uint32_t i = 0; i < 128; ++i) {
+    const uint16_t c = REX_LOAD_U16(at + i * 2);
+    if (c == 0) break;
+    name.push_back(c < 0x80 ? char(c) : '?');
+  }
+  return name;
+}
 }  // namespace
 
 extern "C" void sub_82241428(PPCContext& ctx, uint8_t* base) {
@@ -1830,21 +1869,27 @@ extern "C" void sub_82241428(PPCContext& ctx, uint8_t* base) {
   const int32_t start = REXCVAR_GET(gta4_start_episode);
   if (start >= 0 && !g_start_episode_used) {
     g_start_episode_used = true;
-    if (start == 0) {
-      ctx.r3.s64 = -1;
-      // [ps5 port] No question, and GTA IV itself: left alone, the session
-      // started in the episode last played (The Ballad of Gay Tony's latest
-      // save, with GTA IV chosen on Home).
-      const int32_t profile_episode = static_cast<int32_t>(REX_LOAD_U32(kStartEpisodeAddress));
-      REX_STORE_U32(kStartEpisodeAddress, 0);
-      REXLOG_INFO("GTA IV episode startup: GTA IV chosen (retail result {} not asked; the profile's last "
-                  "episode {} not started)",
-                  retail_episode, profile_episode);
-    } else {
-      ctx.r3.s64 = start;
-      g_answer_yes_for = start;
-      REXLOG_INFO("GTA IV episode startup: episode {} chosen (retail result {})", start, retail_episode);
+    if (start > 0) {
+      // (the check question 52's step makes: is the episode there?)
+      PPCContext call = ctx;
+      call.r3.u64 = REX_LOAD_U32(kProfilePointerAddress);
+      call.r4.s64 = start;
+      sub_8221A0D0(call, base);
+      if (call.r3.u8 == 0) {
+        REXLOG_WARN("GTA IV episode startup: episode {} chosen but not there; retail result {} kept", start,
+                    retail_episode);
+        return;
+      }
     }
+    // No question: the start goes on to its save scan, which only takes saves
+    // of the choice (sub_82240798 below). Set here too for the starts that
+    // skip the scan (no saves): those start the choice new.
+    ctx.r3.s64 = -1;
+    REX_STORE_U32(kStartEpisodeAddress, static_cast<uint32_t>(start));
+    g_boot_episode = start;
+    REXLOG_INFO("GTA IV episode startup: episode {} chosen on Home (retail result {}); its newest save, "
+                "else a new game",
+                start, retail_episode);
     return;
   }
   const std::string policy = REXCVAR_GET(gta4_episode_startup_prompt);
@@ -1861,6 +1906,56 @@ extern "C" void sub_82241428(PPCContext& ctx, uint8_t* base) {
   }
   REXLOG_INFO("GTA IV episode startup: policy={} retail-result={} preserved", policy,
               retail_episode);
+}
+
+// The start's steps: 1 is a new game in kStartEpisodeAddress, 2 loads kBootSlotAddress.
+extern "C" void sub_822440F8(PPCContext& ctx, uint8_t* base) {
+  g_in_start_steps = true;
+  __imp__sub_822440F8(ctx, base);
+  g_in_start_steps = false;
+  if (g_boot_episode >= 0 && ctx.r3.s32 != 0) {
+    const int32_t episode = static_cast<int32_t>(REX_LOAD_U32(kStartEpisodeAddress));
+    const int32_t slot = static_cast<int32_t>(REX_LOAD_U32(kBootSlotAddress));
+    if (ctx.r3.s32 == 2 && slot >= 0)
+      REXLOG_INFO("GTA IV episode startup: loading {} (episode {})", SaveFileName(base, uint32_t(slot)), episode);
+    else
+      REXLOG_INFO("GTA IV episode startup: no save of episode {}; starting it new", episode);
+    g_boot_episode = -1;  // (later scans, the pause menu's Load, are the game's own)
+  }
+}
+
+// The scan's reset sets the start episode to the profile's last: the choice back.
+extern "C" void sub_822409F0(PPCContext& ctx, uint8_t* base) {
+  __imp__sub_822409F0(ctx, base);
+  if (g_in_start_steps && g_boot_episode >= 0)
+    REX_STORE_U32(kStartEpisodeAddress, static_cast<uint32_t>(g_boot_episode));
+}
+
+// Each save's "newest so far?": during the start with a Home choice, a save of
+// another episode that won is undone, so the newest save of the choice wins.
+extern "C" void sub_82240798(PPCContext& ctx, uint8_t* base) {
+  if (!g_in_start_steps || g_boot_episode < 0 || (ctx.r4.u32 & 0xFF) == 0) {
+    __imp__sub_82240798(ctx, base);
+    return;
+  }
+  const uint32_t slot = ctx.r3.u32;
+  uint32_t time[6], episode_words[3];
+  for (uint32_t i = 0; i < 6; ++i) time[i] = REX_LOAD_U32(kNewestSaveTimeAddress + i * 4);
+  for (uint32_t i = 0; i < 3; ++i) episode_words[i] = REX_LOAD_U32(kStartEpisodeAddress + i * 4);
+  const uint32_t previous_slot = REX_LOAD_U32(kBootSlotAddress);
+  __imp__sub_82240798(ctx, base);
+  if (REX_LOAD_U32(kBootSlotAddress) != slot || previous_slot == slot) return;  // (not newer)
+  const int32_t save_episode = static_cast<int32_t>(REX_LOAD_U32(kStartEpisodeAddress));
+  if (save_episode == g_boot_episode) {
+    REXLOG_INFO("GTA IV episode startup: {} '{}' (episode {}) is the newest so far", SaveFileName(base, slot),
+                SaveDisplayName(base, slot), save_episode);
+    return;
+  }
+  for (uint32_t i = 0; i < 6; ++i) REX_STORE_U32(kNewestSaveTimeAddress + i * 4, time[i]);
+  for (uint32_t i = 0; i < 3; ++i) REX_STORE_U32(kStartEpisodeAddress + i * 4, episode_words[i]);
+  REX_STORE_U32(kBootSlotAddress, previous_slot);
+  REXLOG_INFO("GTA IV episode startup: skipping {} '{}' (episode {}, not {})", SaveFileName(base, slot),
+              SaveDisplayName(base, slot), save_episode, g_boot_episode);
 }
 
 extern "C" void sub_82157F90(PPCContext& ctx, uint8_t* base) {
@@ -2362,6 +2457,35 @@ extern "C" void sub_82258EC0(PPCContext& ctx, uint8_t* base) {
     PublishPrimaryPage(base);
   }
   __imp__sub_82258EC0(ctx, base);
+}
+
+// [ps5 port] A script native's lookup (the table r3, the ID r4; native
+// sub_8247C148 passes 0x82B31960): when the ID is listed among its 128, it
+// takes the first of its 256 entries (28 bytes from +8) with that ID whose
+// object (at +12) has a nonzero word at +112. An entry with that ID and no
+// object at all made it read address 112: a Ballad of Gay Tony player's game
+// crashed there in the helicopter mission against the yacht. Such an entry,
+// met before a live one, now counts as not found (the lookup's own answer
+// when none matches: r3 = 0).
+extern "C" void sub_821B8A80(PPCContext& ctx, uint8_t* base) {
+  const uint32_t table = ctx.r3.u32, id = ctx.r4.u32;
+  bool listed = false;
+  for (uint32_t i = 0; i < 128 && !listed; ++i) listed = REX_LOAD_U32(table + 7336 + i * 8) == id;
+  if (listed) {
+    for (uint32_t i = 0; i < 256; ++i) {
+      const uint32_t entry = table + 8 + i * 28;
+      if (REX_LOAD_U32(entry) != id) continue;
+      const uint32_t object = REX_LOAD_U32(entry + 4);
+      if (object && REX_LOAD_U32(object + 112)) break;  // (the original finds this one)
+      if (object) continue;
+      static std::atomic<uint32_t> logged{0};
+      if (logged.fetch_add(1, std::memory_order_relaxed) < 8)
+        REXLOG_WARN("gta4-native-lookup: table {:08X} has ID {:08X} with no object (entry {}); not found", table, id, i);
+      ctx.r3.u64 = 0;
+      return;
+    }
+  }
+  __imp__sub_821B8A80(ctx, base);
 }
 
 // The retail bar renderer reads our slider's position through the cvar bridge.

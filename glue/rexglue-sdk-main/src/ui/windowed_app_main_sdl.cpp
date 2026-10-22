@@ -394,6 +394,20 @@ static void Ps5DiagMonitor() {
                           : 0.0,
                     per_frame(pacer_us),
                     per_frame(wait_us));
+        if (g_frame_generation_active.load()) {
+          const uint64_t pairs = g_fg_pairs.exchange(0), alone = g_fg_unpaired.exchange(0);
+          // (why scenes went out alone, by the first gate each failed)
+          std::string dropped;
+          for (uint32_t i = 0; i < uint32_t(FgDrop::kCount); ++i)
+            if (const uint32_t n = g_fg_drop[i].exchange(0))
+              dropped += fmt::format("{}{} {}", dropped.empty() ? "" : ", ", n, kFgDropNames[i]);
+          REXLOG_INFO("ps5 frame generation: {:.1f} pairs a second (generated + real), {:.1f} real frames "
+                      "alone; each image at least {} vblank{}; {} pairs made; alone because: {}; {} skips in "
+                      "the game's frame numbers",
+                      double(pairs) / real, double(alone) / real, g_fg_vblanks_per_image.load(),
+                      g_fg_vblanks_per_image.load() == 1 ? "" : "s", g_fg_published.exchange(0),
+                      dropped.empty() ? "nothing" : dropped, g_fg_sequence_gaps.exchange(0));
+        }
         const uint64_t kept = g_renderer_cpu_mask.load();
         const char* layout = kept == kOwnCoresLayout        ? "own cores, recycling near"
                              : kept == kOwnCoresApartLayout ? "own cores, recycling anywhere"

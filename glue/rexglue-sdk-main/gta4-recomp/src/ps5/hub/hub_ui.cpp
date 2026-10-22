@@ -108,6 +108,14 @@ struct Hub::Setting {
 // the PS5. The PS5 always sends 4K to the TV.
 static const std::vector<Hub::Setting>& Settings() {
   static const std::vector<Hub::Setting> rows = {
+      // (not a setting of its own: what the ones it sets match, PresetValues)
+      {"DISPLAY", "hub_display_preset", "Preset", nullptr,
+       "Sets the Display settings below in one go, all with a 60 FPS limit. Recommended is the game as it "
+       "comes, in 4K. Performance draws at 1440p with fewer cars and people, for the steadiest 60. Quality "
+       "adds sharper and longer shadows, more detail in the distance, SMAA and the enhanced effects, and can "
+       "drop below 60 in busy streets. Changing any of them makes it Custom.",
+       false, {"recommended", "performance", "quality", "custom"}, {"Recommended", "Performance", "Quality", "Custom"},
+       "recommended"},
       {"DISPLAY", "resolution", "Resolution", "RESOLUTION",
        "How sharp the game is drawn. 720p is the Xbox 360's. The PS5's graphics card has room for 4K; "
        "lower only helps if the picture stutters.",
@@ -139,15 +147,19 @@ static const std::vector<Hub::Setting>& Settings() {
        false, {"30", "40", "60", "120"}, {"30 FPS", "40 FPS", "60 FPS", "120 FPS"}, "60"},
       // (game/ps5_overlay.cpp)
       {"DISPLAY", "ps5_fps_counter", "FPS Counter", nullptr,
-       "Shows the frame rate at the left edge of the screen while you play: frames a second, the frame time and a "
-       "graph of the last frames.",
-       false, {"false", "true"}, {"Off", "On"}, "false"},
-#if LIBERTY_HAS_FSR3
-      {"DISPLAY", "gta4_native_frame_generation", "Frame Generation", nullptr,
-       "Experimental, not ready yet: it can drop frames and make the game feel worse. AMD FSR 3 adds "
-       "a frame between each two the game draws, with a little more input lag. Also turns on FSR 3 "
-       "anti-aliasing.",
-       true, {"off", "fsr3"}, {"Off", "FSR 3 (Experimental)"}, "off"},
+       "Shows the frame rate at the left edge of the screen while you play. Simple is frames a second and the "
+       "frame time. Detailed adds the slowest frames, a graph of the last ones, the resolution, the TV's refresh "
+       "rate, the frame limit and how long the renderer takes.",
+       true, {"false", "simple", "true"}, {"Off", "Simple", "Detailed"}, "false"},
+// (Frame Generation: off and its row gone until it makes frames on the PS5;
+// it broke the radar and made no frames in 1.0.1's tests)
+#if LIBERTY_HAS_FSR3 && LIBERTY_PS5_FRAME_GENERATION
+      {"DISPLAY", "ps5_frame_generation", "Frame Generation", nullptr,
+       "AMD FSR 3 adds a frame between each two the game draws. 30 to 60 holds the game at 30 FPS and shows "
+       "60, on any TV. 60 to 120 needs a 120 Hz TV and switches to it: the game runs at 60 and shows 120, "
+       "and drops to 30 to 60 by itself in places it can't hold 60. Frame Limit doesn't apply while it's on. "
+       "Adds a little input lag and turns on FSR 3 anti-aliasing. Experimental: tell us how it feels.",
+       true, {"off", "30-60", "60-120"}, {"Off", "30 to 60", "60 to 120"}, "off"},
 #endif
       {"DISPLAY", "gta4_native_anti_aliasing", "Anti-Aliasing", nullptr,
        "Smooths jagged edges. FXAA is the lightest; SMAA is sharper and costs a little more. MSAA 4x + SMAA "
@@ -275,6 +287,16 @@ static const std::vector<Hub::Setting>& Settings() {
        "Logs when each stage of every frame finished, to find what holds the frame rate back. The log "
        "grows quickly with it on.",
        false, {"false", "true"}, {"Off", "On"}, "false"},
+      // (game/ps5_overlay.cpp: the overlay repainting every vblank, as up to 0.5b6)
+      {"DEBUG", "ps5_overlay_every_vblank", "Frame Delivery", nullptr,
+       "How the game's frames reach the TV. As Finished sends each frame as soon as it's ready. Every Vblank "
+       "redraws the screen at every refresh, as Beta 6 did, with two refreshes more input lag. For comparing "
+       "which feels smoother.",
+       false, {"false", "true"}, {"As Finished", "Every Vblank"}, "false"},
+      {"DEBUG", "gta4_native_texture_watch", "Texture Watch", nullptr,
+       "Re-reads textures that change in memory without the game saying so. Off brings back the wrong map and "
+       "radar tiles. Only for comparing performance.",
+       false, {"true", "false"}, {"On", "Off"}, "true"},
   };
   return rows;
 }
@@ -1481,7 +1503,90 @@ void Hub::DrawHomePanel(int game, float x0, float x1, float top, float bottom, f
   }
 }
 
+namespace {
+bool IsPreset(const Hub::Setting& r) { return std::string_view(r.key) == "hub_display_preset"; }
+
+// What each preset sets (Recommended, Performance, Quality). Recommended is
+// every one's own default. Frame Generation and the Debug options' Display
+// rows aren't in them: hidden, those stay at their recommended values.
+struct PresetValue {
+  const char* key;
+  const char* value;
+};
+const std::vector<PresetValue>& PresetValues(int preset) {
+  static const std::vector<PresetValue> kPresets[3] = {
+      {{"resolution", "4k"},
+       {"gta4_draw_distance_scale", "1.0"},
+       {"ps5_population", "1.0"},
+       {"gta4_force_highest_lod", "false"},
+       {"gta4_frame_limit", "60"},
+       {"gta4_native_anti_aliasing", "fxaa"},
+       {"gta4_anisotropic_filtering", "1x"},
+       {"gta4_modern_shaders", "false"},
+       {"gta4_reflection_resolution", "1080p"},
+       {"gta4_shadow_map_base_size", "512"},
+       {"gta4_shadow_distance_scale", "1.0"}},
+      {{"resolution", "1440p"},
+       {"gta4_draw_distance_scale", "1.0"},
+       {"ps5_population", "0.75"},
+       {"gta4_force_highest_lod", "false"},
+       {"gta4_frame_limit", "60"},
+       {"gta4_native_anti_aliasing", "fxaa"},
+       {"gta4_anisotropic_filtering", "1x"},
+       {"gta4_modern_shaders", "false"},
+       {"gta4_reflection_resolution", "original"},
+       {"gta4_shadow_map_base_size", "512"},
+       {"gta4_shadow_distance_scale", "1.0"}},
+      {{"resolution", "4k"},
+       {"gta4_draw_distance_scale", "1.5"},
+       {"ps5_population", "1.0"},
+       {"gta4_force_highest_lod", "true"},
+       {"gta4_frame_limit", "60"},
+       {"gta4_native_anti_aliasing", "smaa"},
+       {"gta4_anisotropic_filtering", "16x"},
+       {"gta4_modern_shaders", "true"},
+       {"gta4_reflection_resolution", "1080p"},
+       {"gta4_shadow_map_base_size", "1024"},
+       {"gta4_shadow_distance_scale", "2.0"}},
+  };
+  return kPresets[std::clamp(preset, 0, 2)];
+}
+const Hub::Setting* FindSetting(std::string_view key) {
+  for (const Hub::Setting& r : Settings())
+    if (key == r.key) return &r;
+  return nullptr;
+}
+}  // namespace
+
+int Hub::PresetNow() const {
+  for (int p = 0; p < kPresetCustom; ++p) {
+    bool all = true;
+    for (const PresetValue& pv : PresetValues(p)) {
+      const Setting* r = FindSetting(pv.key);
+      if (!r) continue;
+      const std::string want = pv.value;
+      const int k = SettingIndex(*r);
+      if (k < 0 || k >= int(r->values.size()) || want != r->values[size_t(k)]) {
+        all = false;
+        break;
+      }
+    }
+    if (all) return p;
+  }
+  return kPresetCustom;
+}
+
+void Hub::ApplyPreset(int preset) {
+  for (const PresetValue& pv : PresetValues(preset)) {
+    const Setting* r = FindSetting(pv.key);
+    if (!r) continue;
+    const std::string v = pv.value;
+    Save(r->key, r->quoted ? "\"" + v + "\"" : v);
+  }
+}
+
 int Hub::SettingIndex(const Setting& r) const {
+  if (IsPreset(r)) return PresetNow();
   const std::string v = Value(r.key, r.fallback);
   for (size_t k = 0; k < r.values.size(); ++k)
     if (v == r.values[k]) return int(k);
@@ -1738,7 +1843,7 @@ namespace {
 // frame rate, and are set for it).
 bool Advanced(const Hub::Setting& r) {
   const std::string_view key = r.key;
-  return key == "gta4_native_frame_generation" || key == "gta4_native_shadow_min_indices" ||
+  return key == "ps5_frame_generation" || key == "gta4_native_shadow_min_indices" ||
          key == "ps5_environment_reflection_every";
 }
 }  // namespace
@@ -1755,10 +1860,19 @@ void Hub::KeepHiddenSettings() {
   for (const Setting& r : Settings()) {
     if (Shown(r) || Value(r.key, r.fallback) == r.fallback) continue;
     Save(r.key, r.quoted ? std::string("\"") + r.fallback + "\"" : std::string(r.fallback));
-    if (std::string_view(r.key) == "gta4_native_frame_generation") {
+    if (std::string_view(r.key) == "ps5_frame_generation") {
+      Save("gta4_native_frame_generation", "\"off\"");
       Save("gta4_native_upscaler", "\"native\"");
       Save("gta4_temporal_upscaler_quality", "\"native\"");
     }
+  }
+  // (frame generation off for everyone, whatever turned it on before)
+  if (Value("ps5_frame_generation", "off") != "off" || Value("gta4_native_frame_generation", "off") != "off" ||
+      Value("gta4_native_upscaler", "native") != "native") {
+    Save("ps5_frame_generation", "\"off\"");
+    Save("gta4_native_frame_generation", "\"off\"");
+    Save("gta4_native_upscaler", "\"native\"");
+    Save("gta4_temporal_upscaler_quality", "\"native\"");
   }
   if (Value("gta4_native_guest_texture_swizzle", "false") != "false")
     Save("gta4_native_guest_texture_swizzle", "false");
@@ -1795,9 +1909,11 @@ int Hub::Items() const {
 void Hub::ResetSettings() {
   for (const Setting& r : Settings()) {
     if (IsLanguage(r)) continue;  // (a choice, not a recommendation: it stays)
+    if (IsPreset(r)) continue;    // (the rest's defaults are Recommended)
     Save(r.key, r.quoted ? std::string("\"") + r.fallback + "\"" : std::string(r.fallback));
   }
   // (what frame generation's setting sets with it: off)
+  Save("gta4_native_frame_generation", "\"off\"");
   Save("gta4_native_upscaler", "\"native\"");
   Save("gta4_temporal_upscaler_quality", "\"native\"");
   value_in_ = 0;
@@ -1813,6 +1929,7 @@ void Hub::SwitchRefresh(bool high) {
   }
   if (!high) return;
   Save("ps5_refresh_rate", "60");  // (it would only be refused again at the next start)
+  if (Value("ps5_frame_generation", "off") == "60-120") Save("ps5_frame_generation", "\"30-60\"");
   value_in_ = 0;
   Play(Sound::kError);
   Notice(T("Still at 60 Hz"),
@@ -1830,6 +1947,16 @@ void Hub::Activate(int dir) {
       const std::vector<int> on = SettingsOn(tab_);
       if (item < 0 || item >= int(on.size())) break;
       const auto& r = Settings()[size_t(on[size_t(item)])];
+      if (IsPreset(r)) {
+        // Recommended, Performance and Quality in turn (Custom only shows)
+        const int now = PresetNow();
+        ApplyPreset(now == kPresetCustom ? (dir > 0 ? 0 : kPresetCustom - 1)
+                                         : (now + dir + kPresetCustom) % kPresetCustom);
+        value_in_ = 0;
+        value_dir_ = float(dir);
+        Play(Sound::kSelect);
+        break;
+      }
       const int n = int(r.values.size());
       const int idx = (SettingIndex(r) + dir + n) % n;
       Save(r.key, r.quoted ? std::string("\"") + r.values[size_t(idx)] + "\"" : std::string(r.values[size_t(idx)]));
@@ -1843,12 +1970,25 @@ void Hub::Activate(int dir) {
           SwitchRefresh(false);
         }
       }
-      if (std::string_view(r.key) == "gta4_native_frame_generation") {
+      if (std::string_view(r.key) == "ps5_refresh_rate" && std::string_view(r.values[size_t(idx)]) == "60" &&
+          Value("ps5_frame_generation", "off") == "60-120")
+        Save("ps5_frame_generation", "\"30-60\"");  // (60 to 120 needs 120 Hz)
+      if (std::string_view(r.key) == "ps5_frame_generation") {
         // Frame generation needs FSR 3.1 reconstruction; its Native preset
-        // keeps the chosen resolution (anti-aliasing only).
-        const bool on = std::string_view(r.values[size_t(idx)]) != "off";
+        // keeps the chosen resolution (anti-aliasing only). 60 to 120 takes
+        // the TV to 120 Hz; 30 to 60 works at either rate.
+        const std::string_view mode = r.values[size_t(idx)];
+        const bool on = mode != "off";
+        Save("gta4_native_frame_generation", on ? "\"fsr3\"" : "\"off\"");
         Save("gta4_native_upscaler", on ? "\"fsr3\"" : "\"native\"");
         Save("gta4_temporal_upscaler_quality", "\"native\"");
+        if (mode == "60-120" && Value("ps5_refresh_rate", "60") != "120") {
+          Save("ps5_refresh_rate", "120");
+          if (display_.set_high_refresh)
+            Confirm(T("Switch to 120 Hz?"), T("The screen goes dark for a moment while the TV changes over."),
+                    T("Switch"), [this] { SwitchRefresh(true); }, T("Later"),
+                    [this] { Toast(T("120 Hz from the next start")); });
+        }
       }
       value_in_ = 0;
       value_dir_ = float(dir);

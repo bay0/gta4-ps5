@@ -338,7 +338,10 @@ bool ValidatePatch(const XexInfo& base, const XexInfo& patch, std::span<const ui
     return false;
   }
   if (patch.delta_target_version != kRequiredTargetVersion) {
-    error = "This build requires the GTA IV v8 (0.0.8.5) title update.";
+    // [ps5 port] Players picked Title Update 8 for another edition of the disc
+    // (media 06759F9C, 2.2 MB): the same name and number, another game version.
+    error = "That title update is for another edition of GTA IV. The USA disc needs Title Update 8 for disc "
+            "6AC07221: TU_1A581VI_000000K000000.0000000000205, about 3.7 MB.";
     return false;
   }
   if (patch.delta_source_version != base.version) {

@@ -2272,7 +2272,13 @@ Presenter::PaintResult VulkanPresenter::PaintAndPresentImpl(bool execute_ui_draw
     // the new reference or is exclusively owned by main target painting (and
     // multiple threads can't paint the main target at the same time).
   }
+#if REX_PLATFORM_PS5
+  // [ps5 port] Half the game's frame time is off the TV's vblank grid: the
+  // game runs at half the refresh and FIFO spaces the pair a vblank apart.
+  frame_pacer().SetMinimumInterval(0);
+#else
   frame_pacer().SetMinimumInterval(selected_generated_frame ? selected_generated_frame->interval_ns : 0);
+#endif
 
   const auto& requested_frame_probe = guest_output_properties.provenance.frame_pixel_probe;
   if (requested_frame_probe.valid() && !selected_generated_frame) {
@@ -3085,6 +3091,11 @@ Presenter::PaintResult VulkanPresenter::PaintAndPresentImpl(bool execute_ui_draw
   }
   if (present_result == VK_SUCCESS || present_result == VK_SUBOPTIMAL_KHR) {
     const uint64_t publication = guest_output_properties.provenance.publication_serial;
+#if REX_PLATFORM_PS5
+    // (a generated image and its real partner are two pictures on the TV)
+    rex::frame_stats::NoteImageSent(publication * 2 +
+                                    (generated_stage == GeneratedFrameDelivery::Stage::kGenerated ? 0 : 1));
+#endif
     if (selected_generated_frame && !guest_output_pass_recorded) {
       // A successfully presented fallback clear is not delivery of the pair.
       // Keep the same stage pending and retry through the common pacer.
@@ -3099,11 +3110,23 @@ Presenter::PaintResult VulkanPresenter::PaintAndPresentImpl(bool execute_ui_draw
       // Allow the next scene to render, retaining explicit paint demand until
       // this publication's real image has actually reached queue-present.
       AdmitPacedPublication(publication);
+#if REX_PLATFORM_PS5
+      // [ps5 port] The real image goes right behind it: FIFO shows it on the
+      // next vblank (two vblanks each at 30 -> 60 on 120 Hz).
+      rex::frame_stats::g_fg_pairs.fetch_add(1, std::memory_order_relaxed);
+      if (Window* window = connected_window()) window->RequestPaint();
+#else
       if (Window* window = connected_window())
         window->RequestPaintAfterNanoseconds(frame_pacer().period());
+#endif
     } else {
       generated_delivery_.Presented(generated_stage, publication, diagnostic_swapchain_epoch_);
       AcceptPacedPublication(publication);
+#if REX_PLATFORM_PS5
+      if (generated_stage == GeneratedFrameDelivery::Stage::kUnpaired && guest_output_image &&
+          rex::frame_stats::g_frame_generation_active.load(std::memory_order_relaxed))
+        rex::frame_stats::g_fg_unpaired.fetch_add(1, std::memory_order_relaxed);
+#endif
       if (generated_stage == GeneratedFrameDelivery::Stage::kReal)
         pending_generated_frame_.reset();
       // A newer publication may have delivered the wakeup that painted this

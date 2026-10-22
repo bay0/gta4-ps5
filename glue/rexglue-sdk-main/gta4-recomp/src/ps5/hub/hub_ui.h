@@ -230,6 +230,11 @@ class Hub {
   std::string Value(const std::string& key, const std::string& fallback) const;
   void Save(const std::string& key, const std::string& value);
   int SettingIndex(const Setting& r) const;
+  // The Display page's presets (the Preset row): which one every setting it
+  // sets matches (kPresetCustom: none), and choosing one.
+  static constexpr int kPresetCustom = 3;
+  int PresetNow() const;
+  void ApplyPreset(int preset);
 
   // pages
   void DrawBackdrop();

@@ -46,7 +46,9 @@ bool SetHighRefresh(bool high);
 // screen for as many vblanks as the frame limit takes. At 120 Hz: 40 FPS
 // three, 60 FPS two; at 60 Hz: 30 FPS two; with VRR, 60 and 120 FPS none (as
 // soon as it's ready). Follows later frame limit changes (the pause menu's
-// Graphics page).
+// Graphics page). Also starts the pacing log (ps5_pacing_log): every 10 s,
+// how many vblanks the TV showed each of the game's frames for, from
+// VideoOut's flips, and how evenly the game's frames came.
 void StartGamePacing();
 
 }  // namespace gta4ps5::display

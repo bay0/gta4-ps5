@@ -749,6 +749,16 @@ void GTA4App::OnPreSetup(rex::RuntimeConfig& config) {
                 REXCVAR_GET(gta4_native_upscaler));
     REXCVAR_SET(gta4_native_upscaler, "native");
   }
+#if REX_PLATFORM_PS5
+  // [ps5 port] Frame generation is off on the PS5 for now (it made no frames
+  // and broke the radar), and the in-game menu's graphics rows are gone (the
+  // hub has the PS5's own): anything they set before goes back to default.
+  REXCVAR_SET(gta4_native_frame_generation, "off");
+  for (const char* name : {"gta4_native_upscaler", "gta4_fsr1_quality", "gta4_present_mode", "gta4_aspect_ratio",
+                           "gta4_native_hdr_mode", "gta4_native_hdr_paper_white_nits", "gta4_native_hdr_peak_nits",
+                           "gta4_texture_filtering", "gta4_reflection_aa", "gta4_native_output_dither"})
+    rex::cvar::ResetToDefault(name);
+#endif
   if (REXCVAR_GET(gta4_native_frame_generation) != "off") {
     if (config.gpu_plugin != "gta4-native") {
       REXLOG_WARN("{} frame generation requires the native Vulkan renderer; disabled for this launch",

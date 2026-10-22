@@ -25,6 +25,54 @@ inline std::atomic<uint32_t> g_history_us[kHistory];
 // [ps5 port] Set while FSR 3 frame generation is chosen and the device can
 // run it; with it off (or unavailable) presentation is decoupled.
 inline std::atomic<bool> g_frame_generation_active{false};
+// [ps5 port] Frame generation's cadence: how many vblanks each image (generated
+// or real) stays on screen. 1: the game at half the TV's rate (30 -> 60 at
+// 60 Hz, 60 -> 120 at 120 Hz); 2 at 120 Hz while the game can't hold 60 (30 ->
+// 60). Set by the game's frame limiter; the display follows it through the
+// hook, which re-applies VideoOut's flip rate.
+inline std::atomic<uint32_t> g_fg_vblanks_per_image{1};
+inline std::atomic<void (*)(const char*)> g_display_pacing_changed{nullptr};
+// Images presented as generated + real pairs, and real frames that went out
+// alone (no generated partner), for the timing line.
+inline std::atomic<uint64_t> g_fg_pairs{0}, g_fg_unpaired{0};
+// [ps5 port] Why a scene went out without a generated partner, counted for the
+// 10 s frame generation line (the first gate each scene failed), and the
+// pairs handed to the presenter. Names: kFgDropNames.
+enum class FgDrop : uint32_t {
+  kNoScene,          // the frame had no 3D scene (menus, loading, the phone)
+  kSceneSize,        // the scene's size didn't match the temporal setup
+  kAssets,           // the temporal images couldn't be made
+  kSpatialMotion,    // a draw's motion couldn't be followed: FSR fell back to spatial
+  kSpatialWorld,     // no world draws seen
+  kSpatialDepth,     // no depth
+  kSpatialCamera,    // the camera wasn't taken up
+  kSpatialTime,      // no time passed since the last scene
+  kSpatialEncode,    // the upscaler refused the frame
+  kSecondComposite,  // a second final composite in one frame
+  kEncodeGate,       // motion, camera or presenter state at the generation step
+  kPresenter,        // the presenter can't show generated frames
+  kAudit,            // the motion audit failed
+  kConfigure,        // frame generation couldn't be set up
+  kCamera,           // the camera matrices don't invert
+  kEncodeRefused,    // frame generation refused the inputs (its status is logged)
+  kHistoryReset,     // FSR reset its history: a real frame only
+  kHudNotExact,      // a HUD draw couldn't be replayed onto the pair
+  kDisplayStale,     // the display image wasn't this frame's
+  kConvert,          // converting the pair for the TV failed
+  kPublishRefused,   // the presenter wouldn't take the pair
+  kCount
+};
+inline constexpr const char* kFgDropNames[] = {
+    "no scene", "scene size", "assets", "spatial: motion", "spatial: no world", "spatial: depth",
+    "spatial: camera", "spatial: time", "spatial: upscaler", "second composite", "generation gate",
+    "presenter", "audit", "configure", "camera", "refused", "history reset", "HUD not exact",
+    "display stale", "convert", "publish refused"};
+inline std::atomic<uint32_t> g_fg_drop[uint32_t(FgDrop::kCount)];
+inline std::atomic<uint64_t> g_fg_published{0}, g_fg_sequence_gaps{0};
+inline void NoteFgDrop(FgDrop why) {
+  if (g_frame_generation_active.load(std::memory_order_relaxed))
+    g_fg_drop[uint32_t(why)].fetch_add(1, std::memory_order_relaxed);
+}
 
 inline int64_t NowNs() {
   return std::chrono::duration_cast<std::chrono::nanoseconds>(
@@ -213,6 +261,20 @@ inline std::atomic<uint64_t> g_title_small_shadows_dropped{0};
 // Environment reflection draws, clears and resolves left out on the frames
 // between its redraws (ps5_environment_reflection_every).
 inline std::atomic<uint64_t> g_title_reflection_commands_skipped{0};
+
+// [ps5 port] The game frame (its guest output publication) each image sent to
+// the TV carried, by the image's number from 1: VideoOut numbers its flips the
+// same way (RADV's flip argument), so the pacing log (ps5_display.cpp) can tell
+// a new frame on the screen from a repeat of the last one.
+inline constexpr uint32_t kImageHistory = 1024;
+inline std::atomic<uint64_t> g_images_sent{0};
+inline std::atomic<uint64_t> g_image_frame[kImageHistory];
+// From the presenter, for each image it queued to the TV.
+inline void NoteImageSent(uint64_t frame) {
+  const uint64_t n = g_images_sent.load(std::memory_order_relaxed) + 1;
+  g_image_frame[n % kImageHistory].store(frame, std::memory_order_relaxed);
+  g_images_sent.store(n, std::memory_order_release);
+}
 
 // From the renderer, once per guest frame.
 inline void NotePresent() {

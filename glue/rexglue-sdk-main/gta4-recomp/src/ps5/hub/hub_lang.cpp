@@ -57,6 +57,11 @@ const Entry kTable[] = {
 
     // ---- settings: names and values
     {{"Language", "Langue", "Sprache", "Idioma", "Lingua"}},
+    {{"Preset", "Préréglage", "Voreinstellung", "Preajuste", "Preimpostazione"}},
+    {{"Recommended", "Recommandé", "Empfohlen", "Recomendado", "Consigliato"}},
+    {{"Performance", "Performances", "Leistung", "Rendimiento", "Prestazioni"}},
+    {{"Quality", "Qualité", "Qualität", "Calidad", "Qualità"}},
+    {{"Custom", "Personnalisé", "Eigene", "Personalizado", "Personalizzato"}},
     {{"Resolution", "Résolution", "Auflösung", "Resolución", "Risoluzione"}},
     {{"Draw Distance", "Distance d'affichage", "Sichtweite", "Distancia de dibujado", "Distanza visiva"}},
     {{"Frame Limit", "Limite d'images", "Bildlimit", "Límite de fotogramas", "Limite fotogrammi"}},
@@ -107,6 +112,10 @@ const Entry kTable[] = {
     {{"Freeze Reports", "Rapports de blocage", "Hänger-Berichte", "Informes de bloqueo", "Report blocchi"}},
     {{"GPU Texture Unpacking", "Textures sur GPU", "Texturen auf GPU", "Texturas en GPU", "Texture su GPU"}},
     {{"Frame Timeline", "Chronologie des images", "Bild-Zeitleiste", "Cronología de fotogramas", "Timeline fotogrammi"}},
+    {{"Frame Delivery", "Envoi des images", "Bildausgabe", "Envío de fotogramas", "Invio dei fotogrammi"}},
+    {{"As Finished", "Dès qu'elles sont prêtes", "Sobald fertig", "Al terminar", "Appena pronti"}},
+    {{"Every Vblank", "À chaque rafraîchissement", "Bei jedem Vblank", "En cada refresco", "A ogni refresh"}},
+    {{"Texture Watch", "Surveillance des textures", "Texturüberwachung", "Vigilancia de texturas", "Controllo texture"}},
     {{"Auto", "Auto", "Auto", "Auto", "Auto"}},
     {{"Off", "Désactivé", "Aus", "Desactivado", "Disattivato"}},
     {{"On", "Activé", "An", "Activado", "Attivato"}},
@@ -114,6 +123,8 @@ const Entry kTable[] = {
     {{"720p (Original)", "720p (d'origine)", "720p (Original)", "720p (original)", "720p (originale)"}},
     {{"Shorter", "Plus courte", "Kürzer", "Más corta", "Più corta"}},
     {{"1.5x", "1,5x", "1,5x", "1,5x", "1,5x"}},
+    {{"30 to 60", "30 à 60", "30 zu 60", "30 a 60", "30 a 60"}},
+    {{"60 to 120", "60 à 120", "60 zu 120", "60 a 120", "60 a 120"}},
     {{"FSR 3 (Experimental)", "FSR 3 (expérimental)", "FSR 3 (experimentell)", "FSR 3 (experimental)", "FSR 3 (sperimentale)"}},
     {{"60 Hz", "60\u00A0Hz", "60 Hz", "60 Hz", "60 Hz"}},
     {{"120 Hz", "120\u00A0Hz", "120 Hz", "120 Hz", "120 Hz"}},
@@ -131,6 +142,7 @@ const Entry kTable[] = {
     {{"Fastest", "La plus rapide", "Am schnellsten", "La más rápida", "La più veloce"}},
     {{"Normal", "Normal", "Normal", "Normal", "Normale"}},
     {{"Detailed", "Détaillé", "Ausführlich", "Detallado", "Dettagliato"}},
+    {{"Simple", "Simple", "Einfach", "Simple", "Semplice"}},
     {{"Everything", "Tout", "Alles", "Todo", "Tutto"}},
     {{"Own Cores", "Cœurs dédiés", "Eigene Kerne", "Núcleos propios", "Core dedicati"}},
     {{"Anywhere", "Partout", "Überall", "Cualquiera", "Ovunque"}},
@@ -149,6 +161,11 @@ const Entry kTable[] = {
       "PS5. Las voces siguen en inglés, como en Xbox 360.",
       "La lingua dei testi del gioco (menu, sottotitoli e missioni) e di questo hub. Auto segue la lingua della "
       "PS5. Le voci restano in inglese, come su Xbox 360."}},
+    {{"Sets the Display settings below in one go, all with a 60 FPS limit. Recommended is the game as it comes, in 4K. Performance draws at 1440p with fewer cars and people, for the steadiest 60. Quality adds sharper and longer shadows, more detail in the distance, SMAA and the enhanced effects, and can drop below 60 in busy streets. Changing any of them makes it Custom.",
+      "Règle d'un coup les réglages d'affichage ci-dessous, tous limités à 60 images par seconde. Recommandé, c'est le jeu tel qu'il est livré, en 4K. Performances affiche en 1440p avec moins de voitures et de passants, pour les 60 images les plus stables. Qualité ajoute des ombres plus nettes et plus lointaines, plus de détails au loin, le SMAA et les effets améliorés, et peut passer sous 60 dans les rues animées. Changer l'un d'eux passe en Personnalisé.",
+      "Stellt die Anzeige-Einstellungen darunter auf einmal ein, alle mit 60 Bildern pro Sekunde als Grenze. Empfohlen ist das Spiel, wie es kommt, in 4K. Leistung zeichnet in 1440p mit weniger Autos und Passanten, für die stabilsten 60. Qualität bringt schärfere und weitere Schatten, mehr Details in der Ferne, SMAA und die verbesserten Effekte und kann in belebten Straßen unter 60 fallen. Wer eine davon ändert, hat Eigene.",
+      "Ajusta de una vez los ajustes de pantalla de abajo, todos con un límite de 60 FPS. Recomendado es el juego tal como viene, en 4K. Rendimiento dibuja a 1440p con menos coches y gente, para los 60 más estables. Calidad añade sombras más nítidas y lejanas, más detalle a lo lejos, SMAA y los efectos mejorados, y puede bajar de 60 en calles concurridas. Cambiar cualquiera de ellos lo deja en Personalizado.",
+      "Imposta in un colpo le impostazioni dello schermo qui sotto, tutte con un limite di 60 FPS. Consigliato è il gioco così com'è, in 4K. Prestazioni disegna a 1440p con meno auto e persone, per i 60 più stabili. Qualità aggiunge ombre più nitide e lontane, più dettagli in lontananza, SMAA e gli effetti migliorati, e può scendere sotto 60 nelle strade affollate. Cambiarne uno lo porta su Personalizzato."}},
     {{"How sharp the game is drawn. 720p is the Xbox 360's. The PS5's graphics card has room for 4K; lower only "
       "helps if the picture stutters.",
       "La netteté de l'image du jeu. 720p est celle de la Xbox 360. La carte graphique de la PS5 a de la "
@@ -174,16 +191,21 @@ const Entry kTable[] = {
       "Fino a che distanza edifici e città vengono disegnati nel dettaglio. Originale è quella di Xbox 360. Più "
       "corta disegna meno città e va più veloce nelle strade affollate, con più pop-in. Più lontana costa "
       "fotogrammi, e oltre 1,5x il gioco può restare senza memoria."}},
-    {{"Shows the frame rate at the left edge of the screen while you play: frames a second, the frame time and a "
-      "graph of the last frames.",
-      "Affiche la fréquence d'images sur le bord gauche de l'écran pendant que vous jouez : images par seconde, "
-      "durée d'image et un graphique des dernières images.",
-      "Zeigt beim Spielen am linken Bildschirmrand die Bildrate: Bilder pro Sekunde, die Bildzeit und eine Grafik "
-      "der letzten Bilder.",
-      "Muestra la tasa de fotogramas en el borde izquierdo de la pantalla mientras juegas: fotogramas por segundo, "
-      "el tiempo de fotograma y una gráfica de los últimos fotogramas.",
-      "Mostra la frequenza dei fotogrammi sul bordo sinistro dello schermo mentre giochi: fotogrammi al secondo, il "
-      "tempo per fotogramma e un grafico degli ultimi fotogrammi."}},
+    {{"Shows the frame rate at the left edge of the screen while you play. Simple is frames a second and the "
+      "frame time. Detailed adds the slowest frames, a graph of the last ones, the resolution, the TV's refresh "
+      "rate, the frame limit and how long the renderer takes.",
+      "Affiche la fréquence d'images sur le bord gauche de l'écran pendant que vous jouez. Simple : images par "
+      "seconde et durée d'image. Détaillé ajoute les images les plus lentes, un graphique des dernières, la "
+      "résolution, la fréquence de la TV, la limite d'images et le temps du rendu.",
+      "Zeigt beim Spielen am linken Bildschirmrand die Bildrate. Einfach: Bilder pro Sekunde und Bildzeit. "
+      "Ausführlich zeigt dazu die langsamsten Bilder, eine Grafik der letzten, die Auflösung, die Bildwiederholrate "
+      "des Fernsehers, die Bildratenbegrenzung und die Zeit des Renderers.",
+      "Muestra la tasa de fotogramas en el borde izquierdo de la pantalla mientras juegas. Simple: fotogramas por "
+      "segundo y tiempo de fotograma. Detallado añade los fotogramas más lentos, una gráfica de los últimos, la "
+      "resolución, la frecuencia de la TV, el límite de fotogramas y el tiempo del renderizador.",
+      "Mostra la frequenza dei fotogrammi sul bordo sinistro dello schermo mentre giochi. Semplice: fotogrammi al "
+      "secondo e tempo per fotogramma. Dettagliato aggiunge i fotogrammi più lenti, un grafico degli ultimi, la "
+      "risoluzione, la frequenza della TV, il limite di fotogrammi e il tempo del renderer."}},
     {{"The most frames a second the game draws. 30 is what the Xbox 360 aimed for and holds steady everywhere; 60 "
       "runs at 50 to 60 in the busiest streets. 40 and 120 are for a 120 Hz Refresh Rate: 40 holds steady and is "
       "smoother than 30; 120 is only reached in quieter places.",
@@ -256,20 +278,11 @@ const Entry kTable[] = {
       "lejos, en vez de versiones más simples a distancia. Puede costar fotogramas en calles concurridas.",
       "Mostra edifici, auto e persone al massimo dettaglio appena quel dettaglio è caricato, vicino o lontano, "
       "invece delle versioni più semplici in lontananza. Può costare fotogrammi nelle strade affollate."}},
-    {{"Experimental, not ready yet: it can drop frames and make the game feel worse. AMD FSR 3 adds a frame "
-      "between each two the game draws, with a little more input lag. Also turns on FSR 3 anti-aliasing.",
-      "Expérimental, pas encore au point : peut perdre des images et rendre le jeu moins agréable. AMD FSR 3 "
-      "ajoute une image entre chaque paire d'images du jeu, avec un peu plus de latence. Active aussi "
-      "l'anticrénelage FSR 3.",
-      "Experimentell, noch nicht fertig: Es kann Bilder auslassen und das Spiel schlechter wirken lassen. AMD "
-      "FSR 3 fügt zwischen je zwei gezeichneten Bildern eines ein, mit etwas mehr Eingabeverzögerung. Schaltet "
-      "auch FSR-3-Kantenglättung ein.",
-      "Experimental, aún no está listo: puede perder fotogramas y empeorar la sensación de juego. AMD FSR 3 añade "
-      "un fotograma entre cada dos que dibuja el juego, con algo más de retraso de entrada. También activa el "
-      "antialiasing FSR 3.",
-      "Sperimentale, non ancora pronto: può perdere fotogrammi e peggiorare la sensazione di gioco. AMD FSR 3 "
-      "aggiunge un fotogramma tra ogni coppia disegnata dal gioco, con un po' più di input lag. Attiva anche "
-      "l'antialiasing FSR 3."}},
+    {{"AMD FSR 3 adds a frame between each two the game draws. 30 to 60 holds the game at 30 FPS and shows 60, on any TV. 60 to 120 needs a 120 Hz TV and switches to it: the game runs at 60 and shows 120, and drops to 30 to 60 by itself in places it can't hold 60. Frame Limit doesn't apply while it's on. Adds a little input lag and turns on FSR 3 anti-aliasing. Experimental: tell us how it feels.",
+      "AMD FSR 3 ajoute une image entre chaque paire d'images du jeu. 30 à 60 tient le jeu à 30\u00A0images par seconde et en affiche 60, sur n'importe quelle TV. 60 à 120 demande une TV 120\u00A0Hz et y passe\u00A0: le jeu tourne à 60 et en affiche 120, et repasse de lui-même en 30 à 60 là où il ne tient pas 60. La limite d'images ne s'applique pas tant qu'elle est active. Ajoute un peu de latence et active l'anticrénelage FSR 3. Expérimental\u00A0: dites-nous ce que vous en pensez.",
+      "AMD FSR 3 fügt zwischen je zwei gezeichneten Bildern eines ein. 30 zu 60 hält das Spiel bei 30 Bildern pro Sekunde und zeigt 60, an jedem Fernseher. 60 zu 120 braucht einen 120-Hz-Fernseher und schaltet auf 120 Hz: Das Spiel läuft mit 60 und zeigt 120 und wechselt dort, wo es keine 60 hält, von selbst auf 30 zu 60. Die Bildratenbegrenzung gilt dann nicht. Etwas mehr Eingabeverzögerung; schaltet auch FSR-3-Kantenglättung ein. Experimentell: Sag uns, wie es sich anfühlt.",
+      "AMD FSR 3 añade un fotograma entre cada dos que dibuja el juego. 30 a 60 mantiene el juego a 30 FPS y muestra 60, en cualquier tele. 60 a 120 necesita una tele de 120 Hz y cambia a ella: el juego va a 60 y muestra 120, y pasa solo a 30 a 60 donde no aguanta 60. El límite de fotogramas no se aplica mientras está activa. Añade un poco de retraso de entrada y activa el antialiasing FSR 3. Experimental: cuéntanos qué tal va.",
+      "AMD FSR 3 aggiunge un fotogramma tra ogni due disegnati dal gioco. 30 a 60 tiene il gioco a 30 FPS e ne mostra 60, su qualsiasi TV. 60 a 120 richiede una TV a 120 Hz e ci passa: il gioco gira a 60 e ne mostra 120, e torna da solo a 30 a 60 dove non tiene i 60. Il limite fotogrammi non vale mentre è attiva. Aggiunge un po' di ritardo nei comandi e attiva l'antialiasing FSR 3. Sperimentale: facci sapere com'è."}},
     {{"Smooths jagged edges. FXAA is the lightest; SMAA is sharper and costs a little more. MSAA 4x + SMAA also "
       "cleans up thin edges in the distance, like stairs and wires, but is heavy on the graphics card: new on the "
       "PS5, try 1440p with it if the game slows down.",
@@ -554,6 +567,31 @@ const Entry kTable[] = {
       "crece rápido si está activado.",
       "Annota quando finisce ogni fase di ogni fotogramma, per capire cosa frena il frame rate. Con questa "
       "opzione il log cresce in fretta."}},
+    {{"How the game's frames reach the TV. As Finished sends each frame as soon as it's ready. Every Vblank "
+      "redraws the screen at every refresh, as Beta 6 did, with two refreshes more input lag. For comparing "
+      "which feels smoother.",
+      "Comment les images du jeu arrivent à la TV. Dès qu'elles sont prêtes envoie chaque image aussitôt "
+      "terminée. À chaque rafraîchissement redessine l'écran à chaque rafraîchissement, comme la bêta 6, avec "
+      "deux rafraîchissements de latence en plus. Pour comparer ce qui paraît le plus fluide.",
+      "Wie die Bilder des Spiels zum Fernseher kommen. Sobald fertig schickt jedes Bild, sobald es bereit ist. "
+      "Bei jedem Vblank zeichnet den Bildschirm bei jeder Bildwiederholung neu, wie Beta 6, mit zwei "
+      "Bildwiederholungen mehr Eingabeverzögerung. Zum Vergleichen, was flüssiger wirkt.",
+      "Cómo llegan los fotogramas del juego a la TV. Al terminar envía cada fotograma en cuanto está listo. En "
+      "cada refresco redibuja la pantalla en cada refresco, como la beta 6, con dos refrescos más de retraso de "
+      "entrada. Para comparar cuál se siente más fluido.",
+      "Come arrivano alla TV i fotogrammi del gioco. Appena pronti invia ogni fotogramma non appena è finito. A "
+      "ogni refresh ridisegna lo schermo a ogni refresh, come la beta 6, con due refresh in più di input lag. Per "
+      "confrontare quale sembra più fluido."}},
+    {{"Re-reads textures that change in memory without the game saying so. Off brings back the wrong map and "
+      "radar tiles. Only for comparing performance.",
+      "Relit les textures qui changent en mémoire sans que le jeu le signale. Désactivé fait revenir les "
+      "mauvaises tuiles de la carte et du radar. Seulement pour comparer les performances.",
+      "Liest Texturen neu, die sich im Speicher ändern, ohne dass das Spiel es meldet. Aus bringt die falschen "
+      "Karten- und Radarkacheln zurück. Nur zum Vergleichen der Leistung.",
+      "Vuelve a leer las texturas que cambian en memoria sin que el juego lo diga. Desactivado trae de vuelta "
+      "las casillas equivocadas del mapa y del radar. Solo para comparar el rendimiento.",
+      "Rilegge le texture che cambiano in memoria senza che il gioco lo segnali. Disattivato riporta i riquadri "
+      "sbagliati della mappa e del radar. Solo per confrontare le prestazioni."}},
 
     // ---- Reset All
     {{"Reset all settings?", "Tout réinitialiser ?", "Alle Einstellungen zurücksetzen?",

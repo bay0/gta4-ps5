@@ -5,6 +5,7 @@
 #include <vector>
 
 #include <rex/assert.h>
+#include <rex/platform.h>
 #include <rex/ui/vulkan/util.h>
 
 #include "dlss_frame_generation.h"
@@ -17,7 +18,10 @@ constexpr VkImageUsageFlags kUsage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE
     VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 // Mailboxes + in-flight display submissions + retained real + current encoding.
 // Derived with Python from the presenter's bounded rings. Allocation is lazy.
-constexpr size_t kMaximumRetainedPairs = 8;
+// [ps5 port] Six on the PS5: a set is four display-sized FP16 images (265 MB
+// at 4K), and with the pair presented right away about four are in use; a
+// frame past the limit just goes out without a generated partner.
+constexpr size_t kMaximumRetainedPairs = REX_PLATFORM_PS5 ? 6 : 8;
 
 bool WaitIdle(const ui::vulkan::VulkanDevice& device, bool* device_lost = nullptr) {
   std::vector<ui::vulkan::VulkanDevice::Queue::Acquisition> locks;

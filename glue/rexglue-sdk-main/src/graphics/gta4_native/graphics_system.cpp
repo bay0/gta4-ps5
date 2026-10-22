@@ -300,6 +300,27 @@ REXCVAR_DEFINE_BOOL(gta4_native_texture_watch, true, "GTA IV/Graphics/Native Ren
                     "(textures streamed in where others were: the map's and radar's tiles, "
                     "clothes)");
 REXCVAR_DECLARE(bool, protect_on_release);
+REXCVAR_DEFINE_BOOL(gta4_native_fg_motion_audit, !REX_PLATFORM_PS5, "GTA IV/Graphics/Native Renderer",
+                    "Before each generated frame, check on the GPU that every pixel has motion, "
+                    "depth and history (the recorder waits for the GPU mid-frame to read it)");
+
+// [ps5 port] With frame generation on: the first draws in a session whose
+// motion couldn't be followed (FSR then falls back to spatial and no frame is
+// generated), with their shaders, so one test session names them.
+static void NoteFgMotionLost(const char* why, const void* vertex_shader, const void* pixel_shader,
+                             uint64_t vertex_hash, uint64_t pixel_hash) {
+  static std::atomic<uint32_t> logged{0};
+  if (!rex::frame_stats::g_frame_generation_active.load(std::memory_order_relaxed) ||
+      logged.fetch_add(1, std::memory_order_relaxed) >= 16)
+    return;
+  REXLOG_INFO("ps5 frame generation: motion lost at a draw ({}): vertex shader {:016X}, pixel shader {:016X}", why,
+              vertex_shader ? vertex_hash : 0, pixel_shader ? pixel_hash : 0);
+}
+#define NOTE_FG_MOTION_LOST(why, state)                                                              \
+  NoteFgMotionLost(why, (state) ? (state)->vertex_shader_resource : nullptr,                          \
+                   (state) ? (state)->pixel_shader_resource : nullptr,                                \
+                   (state) && (state)->vertex_shader_resource ? (state)->vertex_shader_resource->hash : 0, \
+                   (state) && (state)->pixel_shader_resource ? (state)->pixel_shader_resource->hash : 0)
 REXCVAR_DEFINE_BOOL(gta4_native_vertex_texture_trace, false, "GTA IV/Diagnostics",
                     "Log textures sampled by vertex shaders and every change of their contents");
 REXCVAR_DEFINE_BOOL(gta4_native_buffer_validation_per_frame, true, "GTA IV/Graphics/Native Renderer",
@@ -22866,6 +22887,7 @@ VkPipeline Gta4NativeGraphicsSystem::GetOrCreatePipeline(
     if (selected_pixel.late_module) selected_pixel.late_module = GetTemporalShaderModule(
         state.pixel_shader_resource, shader_override_selection.pixel_override, true);
     if (!selected_vertex.early_module || !selected_pixel.early_module) {
+      if (temporal_motion_complete_) NOTE_FG_MOTION_LOST("no temporal shader variant", &state);
       temporal_motion_complete_ = false;
       return reject("temporal-shader-variant-unavailable");
     }
@@ -37608,7 +37630,10 @@ bool Gta4NativeGraphicsSystem::RecordNativeFrame(
       if (rendering) { end_rendering(__LINE__); rendering = false; }
       if (!ReplayTemporalDisplayDraw(command_buffer, command, target, resources)) return false;
     }
-    if (!command_recorded && target.temporal_shader) temporal_motion_complete_ = false;
+    if (!command_recorded && target.temporal_shader) {
+      if (temporal_motion_complete_) NOTE_FG_MOTION_LOST("draw not recorded", command.pipeline_state);
+      temporal_motion_complete_ = false;
+    }
     if (!command_recorded)
       TraceModernShaderFailure(command,semantic_lineage_ready?"draw.record":"draw.lighting-lineage",
           semantic_lineage_ready?"Draw or clear recording rejected":"Lighting aspect lineage rejected");
@@ -38252,6 +38277,9 @@ bool Gta4NativeGraphicsSystem::RecordNativeFrame(
       temporal_texture(temporal_scene_.display(), temporal_display_texture_);
       temporal_present = &temporal_display_texture_;
     } else {
+      if (temporal_generated_frame_.has_generated_frame)
+        rex::frame_stats::NoteFgDrop(!temporal_ui_exact_ ? rex::frame_stats::FgDrop::kHudNotExact
+                                                         : rex::frame_stats::FgDrop::kDisplayStale);
       temporal_generated_frame_.has_generated_frame = false;
     }
     NativeTextureImage surface_present;
@@ -38296,8 +38324,10 @@ bool Gta4NativeGraphicsSystem::RecordNativeFrame(
         return converted;
       };
       if (!convert(pair.generated, pair.generated_present) || !convert(pair.real, pair.real_present) ||
-          !temporal_frame_generator_.FinishForPresentation(command_buffer, pair))
+          !temporal_frame_generator_.FinishForPresentation(command_buffer, pair)) {
+        rex::frame_stats::NoteFgDrop(rex::frame_stats::FgDrop::kConvert);
         pair.has_generated_frame = false;
+      }
     }
     SwitchNativeGpuProfileRange(command_buffer, performance::GpuRange::kUnattributed);
     presenter_transfer_written = present_transfer_written;
@@ -39240,8 +39270,12 @@ bool Gta4NativeGraphicsSystem::ClearGuestOutput(
             MarkFrameTimeline(submitted_frame, kTimelineQueueSubmit);
             vulkan_context.MarkImageAccessSubmitted();
             SubmitTemporalFrame();
-            if (temporal_generated_frame_.has_generated_frame)
-              temporal_frame_generator_.Publish(vulkan_context, temporal_generated_frame_);
+            if (temporal_generated_frame_.has_generated_frame) {
+              if (temporal_frame_generator_.Publish(vulkan_context, temporal_generated_frame_))
+                rex::frame_stats::g_fg_published.fetch_add(1, std::memory_order_relaxed);
+              else
+                rex::frame_stats::NoteFgDrop(rex::frame_stats::FgDrop::kPublishRefused);
+            }
             if (gpu_labels::Enabled() && (submitted_frame <= 3 || !(submitted_frame % 120))) {
               REXLOG_INFO("gta4-native-resolve-reuse: frame={} candidates={} skipped={} pixels={} shared-hdr={}",
                           submitted_frame, resolve_reuse_candidates_, resolve_reuse_hits_,
@@ -39412,10 +39446,10 @@ bool Gta4NativeGraphicsSystem::ClearGuestOutput(
       },
       ui::GuestOutputProvenance{
           // [ps5 port] Decoupled, the game keeps the limit itself: the TV
-          // shows each frame as it comes (one clock, not two).
-          .frame_rate_limit = REX_PLATFORM_PS5 && REXCVAR_GET(ps5_decoupled_presentation) &&
-                                      !rex::frame_stats::g_frame_generation_active.load(
-                                          std::memory_order_relaxed)
+          // shows each frame as it comes (one clock, not two). With frame
+          // generation too: the game runs at half the TV's rate and FIFO
+          // shows the generated and the real image on consecutive vblanks.
+          .frame_rate_limit = REX_PLATFORM_PS5 && REXCVAR_GET(ps5_decoupled_presentation)
                                   ? 0u
                                   : rex::cvar::Query<uint32_t>("gta4_frame_limit"),
 

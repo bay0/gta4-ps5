@@ -18,9 +18,10 @@ The easiest way to play is **[Recomp Store](https://recompstore.com)**. It insta
 - DualSense light bar (police lights when you're wanted), adaptive triggers and extra rumble
 - A hub to pick GTA IV or either episode, each with its own look and menu music
 - Installs the game and the episodes from your own files, imports your Xbox 360 saves, backs up and restores saves, and has trophies
+- Display presets: Recommended, Performance and Quality, all at 60 FPS
 - Graphics settings: resolution, draw distance, city population, anti-aliasing, texture filtering, shadows, reflections, motion blur, film grain and FusionFix's enhanced effects
 - Centered car camera, and how quickly the car camera returns and follows
-- An FPS counter, off by default
+- An FPS counter (simple or detailed), off by default
 - English, French, German, Spanish and Italian
 
 ## What you need

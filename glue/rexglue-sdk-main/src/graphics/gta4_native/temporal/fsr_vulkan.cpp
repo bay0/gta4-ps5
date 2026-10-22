@@ -433,7 +433,8 @@ bool FsrUpscalerVulkan::Configure(const Configuration& configuration) {
   create = {};
   create.header.type = FFX_API_CREATE_CONTEXT_DESC_TYPE_UPSCALE;
   create.header.pNext = &state.backend.header;
-  create.flags = FFX_UPSCALE_ENABLE_DEBUG_CHECKING;
+  // [ps5 port] No debug checking: it validates every dispatch on the recorder.
+  create.flags = REX_PLATFORM_PS5 ? 0 : FFX_UPSCALE_ENABLE_DEBUG_CHECKING;
   if (configuration.hdr) create.flags |= FFX_UPSCALE_ENABLE_HIGH_DYNAMIC_RANGE;
   if (configuration.reversed_depth) create.flags |= FFX_UPSCALE_ENABLE_DEPTH_INVERTED;
   if (configuration.infinite_depth) create.flags |= FFX_UPSCALE_ENABLE_DEPTH_INFINITE;
@@ -598,7 +599,7 @@ bool FsrFrameGenerationVulkan::Configure(const Configuration& configuration, VkF
   create = {};
   create.header.type = FFX_API_CREATE_CONTEXT_DESC_TYPE_FRAMEGENERATION;
   create.header.pNext = &state.backend.header;
-  create.flags = FFX_FRAMEGENERATION_ENABLE_DEBUG_CHECKING;
+  create.flags = REX_PLATFORM_PS5 ? 0 : FFX_FRAMEGENERATION_ENABLE_DEBUG_CHECKING;
   if (configuration.hdr) create.flags |= FFX_FRAMEGENERATION_ENABLE_HIGH_DYNAMIC_RANGE;
   if (configuration.reversed_depth) create.flags |= FFX_FRAMEGENERATION_ENABLE_DEPTH_INVERTED;
   if (configuration.infinite_depth) create.flags |= FFX_FRAMEGENERATION_ENABLE_DEPTH_INFINITE;

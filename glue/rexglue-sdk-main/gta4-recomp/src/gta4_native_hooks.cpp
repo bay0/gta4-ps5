@@ -27,6 +27,9 @@
 #include <rex/cvar.h>
 #include <rex/frame_stats.h>
 #include <time.h>
+#if REX_PLATFORM_PS5
+#include "ps5/game/ps5_display.h"
+#endif
 #include <rex/diagnostics/policy.h>
 
 #include <rex/graphics/gta4_native/anti_aliasing_policy.h>
@@ -7866,11 +7869,80 @@ extern "C" void sub_826273A0(PPCContext& ctx, uint8_t* base) {
 REXCVAR_DECLARE(bool, ps5_decoupled_presentation);
 REXCVAR_DECLARE(uint32_t, gta4_frame_limit);
 REXCVAR_DECLARE(std::string, gta4_native_frame_generation);
+REXCVAR_DECLARE(std::string, ps5_frame_generation);
+
+// [ps5 port] Frame generation's cadence at 120 Hz: 60 -> 120 (each image one
+// vblank) while the game and the renderer fit a frame in two vblanks, else
+// 30 -> 60 (each image two). A miss is a frame whose work (the game's render
+// thread less its waits for the renderer, or the recorder's) left less than
+// 0.4 ms of the 16.68 ms, or that came 1.5 ms late however it was spent (the
+// GPU, say); 8 misses in 30 frames drop to 30 -> 60, and 3 s with every frame
+// 1.5 ms under brings 60 -> 120 back (twice as long each time 60 -> 120 fails
+// again within 15 s, up to a minute: the GPU's share isn't in the load). At
+// 60 Hz it is always 30 -> 60. A change re-applies the TV's flip rate (one
+// visible hitch), at most once every 3 s.
+static void Ps5FrameGenerationCadence(int64_t now, int64_t work_ns, int64_t late_ns) {
+  using namespace rex::frame_stats;
+  constexpr int64_t kTwoVblanks = 16683333, kSecond = 1000000000;
+  static bool started = false;
+  static uint32_t frames = 0, misses = 0;
+  static int64_t changed_ns = 0, roomy_since_ns = 0, returned_ns = 0, roomy_needed_ns = 3 * kSecond;
+  const bool high = gta4ps5::display::HighRefresh();
+  const auto set = [&](uint32_t vblanks, const char* why) {
+    g_fg_vblanks_per_image.store(vblanks, std::memory_order_release);
+    changed_ns = now;
+    frames = misses = 0;
+    roomy_since_ns = 0;
+    if (auto* changed = g_display_pacing_changed.load(std::memory_order_acquire)) changed(why);
+    REXLOG_INFO("ps5 frame generation: {} ({})",
+                !high ? "30 -> 60 at 60 Hz" : vblanks == 1 ? "60 -> 120" : "30 -> 60 at 120 Hz", why);
+  };
+  if (!started) {
+    started = true;
+    set(high && REXCVAR_GET(ps5_frame_generation) == "30-60" ? 2 : 1, "frame generation on");
+    return;
+  }
+  const uint32_t vblanks = g_fg_vblanks_per_image.load(std::memory_order_relaxed);
+  if (!high) {
+    if (vblanks != 1) set(1, "60 Hz");
+    return;
+  }
+  // 30 to 60 chosen: held there at 120 Hz too (each image two vblanks).
+  if (REXCVAR_GET(ps5_frame_generation) == "30-60") {
+    if (vblanks != 2) set(2, "30 to 60 chosen");
+    return;
+  }
+  const int64_t recorder_ns = int64_t(g_last_recorder_busy_us.load(std::memory_order_relaxed)) * 1000;
+  const int64_t load = std::max(work_ns, recorder_ns);
+  if (now - changed_ns < 3 * kSecond) return;
+  if (vblanks == 1) {
+    ++frames;
+    misses += load > kTwoVblanks - 400000 || late_ns > 1500000;
+    if (misses >= 8) {
+      roomy_needed_ns = returned_ns && now - returned_ns < 15 * kSecond
+                            ? std::min(2 * roomy_needed_ns, 60 * kSecond)
+                            : 3 * kSecond;
+      set(2, "the game can't hold 60 here");
+    } else if (frames >= 30) {
+      frames = misses = 0;
+    }
+  } else if (load < kTwoVblanks - 1500000) {
+    if (!roomy_since_ns) roomy_since_ns = now;
+    if (now - roomy_since_ns >= roomy_needed_ns) {
+      set(1, "the game holds 60 again");
+      returned_ns = now;
+    }
+  } else {
+    roomy_since_ns = 0;
+  }
+}
+
 // [ps5 port] With the renderer decoupled from the TV, the frame limit holds
 // the game's render thread to its rate here, after each frame is handed over:
 // an early frame waits for its time, a late one goes on at once (and moves
 // the schedule when it is a whole frame late), so a 40 ms frame is shown at
-// 40 ms, not at the next 33 ms slot after it.
+// 40 ms, not at the next 33 ms slot after it. With frame generation the game
+// runs at half the TV's rate instead (a quarter while the cadence says so).
 static void Ps5LimitFrameRate() {
   if (!rex::frame_stats::g_title_thread.load(std::memory_order_relaxed)) {
     rex::frame_stats::g_title_thread.store(reinterpret_cast<uintptr_t>(pthread_self()),
@@ -7879,22 +7951,37 @@ static void Ps5LimitFrameRate() {
   static uint64_t title_cpu_mask_applied = 0;
   rex::frame_stats::FollowRendererCpuMask(title_cpu_mask_applied, rex::frame_stats::RendererRole::kTitle);
   rex::frame_stats::NoteCpu(rex::frame_stats::g_cpus_title);
-  if (!REXCVAR_GET(ps5_decoupled_presentation) ||
-      rex::frame_stats::g_frame_generation_active.load(std::memory_order_relaxed))
-    return;
-  const uint32_t fps = REXCVAR_GET(gta4_frame_limit);
+  if (!REXCVAR_GET(ps5_decoupled_presentation)) return;
   static int64_t next_ns = 0;
+  // When the previous frame left here, and the game's waits for the renderer
+  // so far (the 10 s timing line resets the sum).
+  static int64_t last_exit_ns = 0;
+  static uint64_t last_slot_wait_us = 0;
+  int64_t now = rex::frame_stats::NowNs();
+  uint32_t fps = REXCVAR_GET(gta4_frame_limit);
+  const auto leave = [&] { last_exit_ns = now; };
+  if (rex::frame_stats::g_frame_generation_active.load(std::memory_order_relaxed)) {
+    const uint64_t slot_wait_us = rex::frame_stats::g_title_slot_wait_us.load(std::memory_order_relaxed);
+    const uint64_t waited_us = slot_wait_us >= last_slot_wait_us ? slot_wait_us - last_slot_wait_us : slot_wait_us;
+    last_slot_wait_us = slot_wait_us;
+    const int64_t work_ns = last_exit_ns ? std::max<int64_t>(0, now - last_exit_ns - int64_t(waited_us) * 1000) : 0;
+    // (how late this frame is for its slot)
+    Ps5FrameGenerationCadence(now, work_ns, next_ns ? now - next_ns : 0);
+    const uint32_t refresh = gta4ps5::display::HighRefresh() ? 120 : 60;
+    fps = refresh / (2 * std::max<uint32_t>(1, rex::frame_stats::g_fg_vblanks_per_image.load(std::memory_order_relaxed)));
+  }
   if (!fps) {
     next_ns = 0;
+    leave();
     return;
   }
   // At the TV's own rate (59.94 Hz: 30 is 29.97 here): a plain 30 drifts
   // against the vblanks and a frame slips a vblank every ~17 s.
   const int64_t period = 1001000000ll / fps;  // 33.367 ms at 30
-  int64_t now = rex::frame_stats::NowNs();
 
   if (!next_ns || now - next_ns >= period || next_ns - now > 2 * period) {
     next_ns = now + period;
+    leave();
     return;
   }
   if (now < next_ns) {
@@ -7909,6 +7996,7 @@ static void Ps5LimitFrameRate() {
     rex::frame_stats::g_pacer_wait_us.fetch_add(held_us, std::memory_order_relaxed);
   }
   next_ns += period;
+  leave();
 }
 #endif
 

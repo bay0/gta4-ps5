@@ -29,8 +29,25 @@ The easiest way to play is **[RecompStore](https://recompstore.com)**. It instal
 ## What you need
 - A jailbroken PS5 that runs homebrew apps from `/data/homebrew/`
 - Your **own** copy of GTA IV for the **USA Xbox 360** as an `.iso`, and its Title Update 8 (RecompStore gets it for you). No game files are included.
-- For the episodes, their package from your Xbox 360
+- For the episodes, their package from your Xbox 360 (see below)
 - About 17 GB free
+
+## Which files work
+| | Works | File name | Size |
+|---|---|---|---|
+| GTA IV disc image | USA Xbox 360 disc, as an `.iso` | `Grand Theft Auto IV (USA) (En,Fr,De,Es,It).iso` | 7,835,492,352 bytes (7.3 GB) |
+| Title Update 8 | For the USA disc only | `TU_1A581VI_000000K000000.0000000000205` | 3,715,072 bytes (3.7 MB) |
+| The Lost and Damned | The Xbox Live download for GTA IV | `B66716ED23BE790FCF1210AB932119501DC7405E54` | about 1.8 GB |
+| The Ballad of Gay Tony | The Xbox Live download for GTA IV | `C7CE183800831B6FF277AAFC71B9B904C676354154` | about 1.9 GB |
+
+The two episode packages have no file extension. That's normal, so leave the names as they are. On your 360's drive they're in `Content/0000000000000000/545407F2/00000002`.
+
+These don't work:
+- Any disc image that isn't the USA one, or one that's a very different size from the one above (a bad or modified rip)
+- A title update for another edition of GTA IV, even if it's also called Title Update 8
+- The *Episodes from Liberty City* disc (the standalone game). Use the two Xbox Live packages instead.
+- PC or PS3 files of the game or the episodes
+- Other GTA IV DLC in that folder. Only the two episodes are used.
 
 > [!TIP]
 > ### 💙 Enjoying the port?

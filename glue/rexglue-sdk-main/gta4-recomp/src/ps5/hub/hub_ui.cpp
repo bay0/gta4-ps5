@@ -297,6 +297,12 @@ static const std::vector<Hub::Setting>& Settings() {
        "Re-reads textures that change in memory without the game saying so. Off brings back the wrong map and "
        "radar tiles. Only for comparing performance.",
        false, {"true", "false"}, {"On", "Off"}, "true"},
+      // (gta4_native/graphics_system.cpp: lights that go dark near the camera)
+      {"DEBUG", "ps5_light_test", "Light Test", nullptr,
+       "For lights that go dark close to the camera, like in tunnels or over the pool table. No Stencil lets "
+       "every lamp light all it reaches, even through walls. No Clamp changes how a lamp's area is marked. "
+       "Tell us which one brings the light back. Applies at the next start.",
+       true, {"off", "no-stencil", "no-clamp"}, {"Off", "No Stencil", "No Clamp"}, "off"},
   };
   return rows;
 }

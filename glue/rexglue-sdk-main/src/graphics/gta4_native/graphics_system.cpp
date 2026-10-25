@@ -546,6 +546,14 @@ REXCVAR_DEFINE_STRING(
               "zpass-back", "zpass-both", "x890-zpass-back", "lequal-front", "lequal-back",
               "lequal-both"})
     .lifecycle(rex::cvar::Lifecycle::kRequiresRestart);
+// [ps5 port] A test for local lights that go dark near the camera (tunnels,
+// the bar's pool table): no-stencil draws every local light's contribution
+// without the stencil its volume marked (lights reach past their walls);
+// no-clamp marks the volumes without depth clamp.
+REXCVAR_DEFINE_STRING(ps5_light_test, "off", "PS5",
+                      "Local light test: off, no-stencil (contributions skip the volume's stencil) or "
+                      "no-clamp (volumes marked without depth clamp)")
+    .allowed({"off", "no-stencil", "no-clamp"});
 REXCVAR_DEFINE_BOOL(gta4_native_light_ps9_stencil_bypass, false, "GTA IV/Diagnostics",
                     "Diagnostic-only stencil bypass for fillerVolumePoint PS9 accumulation draws")
     .lifecycle(rex::cvar::Lifecycle::kRequiresRestart);
@@ -7915,7 +7923,8 @@ void Gta4NativeGraphicsSystem::RenderWorkerMain() {
           };
           fixed.depth_clamp_enable =
               ShouldEnableNativeDepthClampForDraw(fixed.depth_clamp_enable != 0,
-                                                  IsLocalStencilSetup(command.lighting),
+                                                  IsLocalStencilSetup(command.lighting) &&
+                                                      REXCVAR_GET(ps5_light_test) != "no-clamp",
                                                   stencil_volume_state)
                   ? 1u
                   : 0u;
@@ -32692,6 +32701,14 @@ bool Gta4NativeGraphicsSystem::RecordNativeFrame(
       }
     }
 
+    if (!light_stencil_bypass_command && queued_command.fixed_function_state.stencil_enable &&
+        queued_command.lighting.role == LightPassRole::kLocalContribution &&
+        REXCVAR_GET(ps5_light_test) == "no-stencil") {
+      light_stencil_bypass_command.emplace(queued_command);
+      light_stencil_bypass_command->fixed_function_state.stencil_enable = 0;
+      command_pointer = &*light_stencil_bypass_command;
+    }
+
     const std::string& stencil_face_probe = REXCVAR_GET(gta4_native_light_stencil_face_probe);
     constexpr uint64_t kDeferredLightingVs1Hash = 0xA97B1F043F720396ull;
     uint64_t stencil_face_probe_instance = 0;
@@ -36451,6 +36468,7 @@ bool Gta4NativeGraphicsSystem::RecordNativeFrame(
           !PhoneTraceConfig().readbacks && !selected_light_stencil_setup_draw && !light_color_delta_draw &&
           !postfx_scheduler.scene_capture_pending() &&
           !REXCVAR_GET(gta4_native_light_ps9_stencil_bypass) &&
+          REXCVAR_GET(ps5_light_test) == "off" &&
           REXCVAR_GET(gta4_native_light_ps9_stencil_probe) == "original" &&
           REXCVAR_GET(gta4_native_light_stencil_face_probe) == "original" &&
           !CachedDiagnosticsEnabled(rex::diagnostics::Category::kNativeProbes)) {

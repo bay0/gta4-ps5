@@ -7,8 +7,10 @@
 >
 > All the credit goes to them. Go star the original projects and support them.
 
-## Get it on Recomp Store
-The easiest way to play is **[Recomp Store](https://recompstore.com)**. It installs the app, downloads Title Update 8 for you and keeps it up to date.
+## Get it on RecompStore
+The easiest way to play is **[RecompStore](https://recompstore.com)**. It installs the app, downloads Title Update 8 for you and keeps it up to date.
+
+[![Get it on RecompStore](https://recompstore.com/assets/press/badge-dark.svg)](https://recompstore.com/game/PPSA94004)
 
 ## What's in it
 - GTA IV and both Episodes from Liberty City, recompiled to run natively on the PS5
@@ -26,7 +28,7 @@ The easiest way to play is **[Recomp Store](https://recompstore.com)**. It insta
 
 ## What you need
 - A jailbroken PS5 that runs homebrew apps from `/data/homebrew/`
-- Your **own** copy of GTA IV for the **USA Xbox 360** as an `.iso`, and its Title Update 8 (Recomp Store gets it for you). No game files are included.
+- Your **own** copy of GTA IV for the **USA Xbox 360** as an `.iso`, and its Title Update 8 (RecompStore gets it for you). No game files are included.
 - For the episodes, their package from your Xbox 360
 - About 17 GB free
 

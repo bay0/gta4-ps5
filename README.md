@@ -45,9 +45,10 @@ The two episode packages have no file extension. That's normal, so leave the nam
 These don't work:
 - Any disc image that isn't the USA one, or one that's a very different size from the one above (a bad or modified rip)
 - A title update for another edition of GTA IV, even if it's also called Title Update 8
-- The *Episodes from Liberty City* disc (the standalone game). Use the two Xbox Live packages instead.
 - PC or PS3 files of the game or the episodes
 - Other GTA IV DLC in that folder. Only the two episodes are used.
+
+The *Episodes from Liberty City* disc (the standalone game) hasn't been tested yet. The two Xbox Live packages are the way that's known to work.
 
 > [!TIP]
 > ### 💙 Enjoying the port?

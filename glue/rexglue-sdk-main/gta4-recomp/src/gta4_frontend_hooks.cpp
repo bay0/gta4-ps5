@@ -1836,7 +1836,6 @@ bool g_start_episode_used = false;  // (the start only: later checks are the gam
 // save's name) to kStartEpisodeAddress. So with a TLAD save newest, GTA IV
 // chosen on Home still loaded TLAD. With a Home choice the scan here only
 // takes saves of that episode, and with none the episode starts new.
-constexpr uint32_t kProfilePointerAddress = 0x821E4DD4;
 constexpr uint32_t kBootSlotAddress = 0x82A95478;       // (-1: none, a new game)
 constexpr uint32_t kNewestSaveTimeAddress = 0x82BF98A0; // (6 words)
 constexpr uint32_t kSaveTableAddress = 0x82BF3D98;      // (XCONTENT_DATA, 308 bytes each)
@@ -1869,18 +1868,9 @@ extern "C" void sub_82241428(PPCContext& ctx, uint8_t* base) {
   const int32_t start = REXCVAR_GET(gta4_start_episode);
   if (start >= 0 && !g_start_episode_used) {
     g_start_episode_used = true;
-    if (start > 0) {
-      // (the check question 52's step makes: is the episode there?)
-      PPCContext call = ctx;
-      call.r3.u64 = REX_LOAD_U32(kProfilePointerAddress);
-      call.r4.s64 = start;
-      sub_8221A0D0(call, base);
-      if (call.r3.u8 == 0) {
-        REXLOG_WARN("GTA IV episode startup: episode {} chosen but not there; retail result {} kept", start,
-                    retail_episode);
-        return;
-      }
-    }
+    // (No installed check here: question 52's own, sub_8221A0D0, said "not
+    // there" for installed episodes in 1.0.1 testers' logs, and the hub only
+    // offers installed episodes.)
     // No question: the start goes on to its save scan, which only takes saves
     // of the choice (sub_82240798 below). Set here too for the starts that
     // skip the scan (no saves): those start the choice new.

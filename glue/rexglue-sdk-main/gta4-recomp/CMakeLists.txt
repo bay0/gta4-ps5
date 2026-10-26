@@ -520,7 +520,7 @@ elseif(PS5)
         PROPERTIES COMPILE_DEFINITIONS GTA4_SONY_PRIMARY_PLAYER_ALIAS)
     # (the version only where it is shown: on the whole target, a version
     # change rebuilt every recompiled file)
-    set_property(SOURCE src/ps5/hub/ps5_hub.cpp src/ps5/game/ps5_overlay.cpp APPEND PROPERTY
+    set_property(SOURCE src/ps5/hub/ps5_hub.cpp src/ps5/game/ps5_overlay.cpp src/ps5/game/ps5_display.cpp APPEND PROPERTY
         COMPILE_DEFINITIONS GTA4PS5_VERSION="${GTA4_PS5_VERSION}")
     target_compile_definitions(gta4 PRIVATE
         GTA4_RECOMP_ASSET_XEX="/app0/assets/default_v8.xex"

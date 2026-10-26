@@ -294,7 +294,6 @@ REXCVAR_DEFINE_BOOL(ps5_hang_reports, true, "PS5",
 // where every thread is while it lasts, at most once every 20 s.
 static void Ps5HitchWatch() {
   using namespace rex::frame_stats;
-  uint64_t sampled_at_frame = 0;
   int64_t last_sample_ns = 0;
   for (;;) {
     std::this_thread::sleep_for(std::chrono::milliseconds(20));
@@ -307,10 +306,11 @@ static void Ps5HitchWatch() {
     }
     const uint64_t frames = g_presents.load(std::memory_order_acquire);
     const int64_t last = g_last_present_ns.load(std::memory_order_acquire), now = NowNs();
-    if (frames < 900 || frames == sampled_at_frame || !last || now - last < 300000000 ||
-        now - last_sample_ns < 20000000000ll || !REXCVAR_GET(ps5_hang_reports))
+    // (again every 20 s while the same frame stays up: a freeze's report
+    // must reach the end of the log, where a sent log is cut)
+    if (frames < 900 || !last || now - last < 300000000 || now - last_sample_ns < 20000000000ll ||
+        !REXCVAR_GET(ps5_hang_reports))
       continue;
-    sampled_at_frame = frames;
     last_sample_ns = now;
     REXLOG_INFO("ps5 hitch: no new frame for {} ms after frame {}; where the threads are:",
                 (now - last) / 1000000, frames);

@@ -222,13 +222,13 @@ void PacingMain() {
         "ps5 pacing: the TV showed {} frames: {} for 1 vblank, {} for 2, {} for 3, {} for 4 or more ({} times "
         "held for a different number than the frame before; {:.1f} to {:.1f} ms; {} gone between looks); the "
         "game's {} frames: {} to 17.5 ms, {} to 25, {} to 34.5, {} longer, {} jumps of 4 ms or more; {} "
-        "images queued, not shown yet; {} Hz{}, frame limit {}, frames {}, texture watch {}, log {}",
+        "images queued, not shown yet; {} Hz{}, frame limit {}, frames {}, texture watch {}, log {}; version {}",
         shown_total, w.shown[0], w.shown[1], w.shown[2], w.shown[3], w.changes, w.shown_min / 1e6,
         w.shown_max / 1e6, w.unseen, game_total, w.game[0], w.game[1], w.game[2], w.game[3], w.jumps,
         flip > 0 ? int64_t(g_images_sent.load(std::memory_order_acquire)) - flip : -1,
         g_high.load() ? "119.88" : "59.94", g_vrr.load() ? " VRR" : "", REXCVAR_GET(gta4_frame_limit),
         REXCVAR_GET(ps5_overlay_every_vblank) ? "every vblank" : "as finished",
-        REXCVAR_GET(gta4_native_texture_watch) ? "on" : "off", REXCVAR_GET(log_level));
+        REXCVAR_GET(gta4_native_texture_watch) ? "on" : "off", REXCVAR_GET(log_level), GTA4PS5_VERSION);
     w = {};
   }
 }

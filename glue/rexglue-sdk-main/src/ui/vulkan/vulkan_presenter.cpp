@@ -2305,6 +2305,21 @@ Presenter::PaintResult VulkanPresenter::PaintAndPresentImpl(bool execute_ui_draw
                  diagnostic_tv_provenance_.tv_session_id) {
     diagnostic_tv_paint_carry_remaining_ = 0;
   }
+  // [ps5 port] The same traced frame painted again (the game stopped making
+  // frames): a few lines, then one every 600 paints, or the log fills with
+  // them and a freeze's own report never reaches the end of it.
+  {
+    static uint64_t repeated_present = 0, repeats = 0;
+    if (log_tv_paint) {
+      if (tv_trace_provenance.title_present_id == repeated_present) {
+        ++repeats;
+      } else {
+        repeated_present = tv_trace_provenance.title_present_id;
+        repeats = 0;
+      }
+      if (repeats > 8 && repeats % 600) log_tv_paint = false;
+    }
+  }
 
   if (guest_output_image) {
 #if defined(REX_HAS_FIDELITYFX_FSR1)

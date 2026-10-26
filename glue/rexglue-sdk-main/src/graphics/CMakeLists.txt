@@ -336,9 +336,11 @@ if(REXGLUE_USE_VULKAN)
         "${GTA4_NATIVE_SHADER_CACHE_ROOT}"
         "${GTA4_NATIVE_SMOLV_ROOT}"
     )
-    target_compile_definitions(rexgpu-gta4-native PRIVATE
-        GTA4_NATIVE_FONT_ASSET_ROOT="${LIBERTY_RECOMP_WORKSPACE_ROOT}/LibertyRecompLib/font_atlases"
-    )
+    if(NOT PS5)
+        target_compile_definitions(rexgpu-gta4-native PRIVATE
+            GTA4_NATIVE_FONT_ASSET_ROOT="${LIBERTY_RECOMP_WORKSPACE_ROOT}/LibertyRecompLib/font_atlases"
+        )
+    endif()
     target_link_libraries(rexgpu-gta4-native PRIVATE
         libzstd_static
         SPIRV-Headers::SPIRV-Headers
